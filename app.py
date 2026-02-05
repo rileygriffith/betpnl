@@ -13,25 +13,24 @@ from pathlib import Path
 DB_PATH = "bet_tracker.db"
 
 def init_db():
-    """Initialize SQLite database with transactions and bets tables if they don't exist."""
+    """Initialize SQLite database with book_pnl and bets tables if they don't exist."""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Aggregate transactions table (book P&L by day/week/month/year)
+    # Book P&L table (simplified - just P&L, no risk tracking)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS transactions (
+        CREATE TABLE IF NOT EXISTS book_pnl (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             event_date DATE NOT NULL,
             book TEXT NOT NULL,
             timeframe_type TEXT NOT NULL DEFAULT 'daily',
-            total_risked REAL NOT NULL DEFAULT 0,
-            total_won REAL NOT NULL DEFAULT 0,
+            pnl REAL NOT NULL,
             last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(event_date, book, timeframe_type)
         )
     """)
     
-    # Individual bets table (single bet level data)
+    # Individual bets table (with full tracking - amount risked, odds, status)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS bets (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -229,7 +228,7 @@ def get_today_stats():
     
     # Aggregate transactions for today (daily entries only)
     cursor.execute("""
-        SELECT SUM(total_risked) as total_risked, SUM(total_won) as total_won
+        SELECT SUM(total_won) as total_pnl
         FROM transactions
         WHERE event_date = ? AND timeframe_type = 'daily'
     """, (today,))
@@ -238,7 +237,7 @@ def get_today_stats():
     
     # Settled bets for today
     cursor.execute("""
-        SELECT SUM(amount_risked) as total_risked, SUM(pnl) as total_pnl
+        SELECT SUM(pnl) as total_pnl
         FROM bets
         WHERE event_date = ? AND status != 'open'
     """, (today,))
@@ -247,18 +246,13 @@ def get_today_stats():
     
     conn.close()
     
-    # Combine results
-    total_risked = (trans_result[0] or 0) + (bets_result[0] or 0)
-    total_won = (trans_result[1] or 0)
-    total_pnl = (bets_result[1] or 0) if bets_result[1] else 0
-    
-    if trans_result[0] and trans_result[1]:
-        total_pnl += (trans_result[1] - trans_result[0])
+    # Combine results (total_won already contains P&L)
+    total_pnl = (trans_result[0] or 0) + (bets_result[0] or 0)
     
     return {
-        'total_risked': total_risked,
+        'total_risked': 0,
         'total_pnl': total_pnl,
-        'roi': (total_pnl / total_risked * 100) if total_risked > 0 else 0
+        'roi': 0
     }
 
 def get_week_stats():
@@ -272,7 +266,7 @@ def get_week_stats():
     
     # Aggregate transactions for the week (daily and weekly entries only)
     cursor.execute("""
-        SELECT SUM(total_risked) as total_risked, SUM(total_won) as total_won
+        SELECT SUM(total_won) as total_pnl
         FROM transactions
         WHERE event_date >= ? AND event_date <= ? AND timeframe_type IN ('daily', 'weekly')
     """, (week_start, today_str))
@@ -281,7 +275,7 @@ def get_week_stats():
     
     # Settled bets for the week
     cursor.execute("""
-        SELECT SUM(amount_risked) as total_risked, SUM(pnl) as total_pnl
+        SELECT SUM(pnl) as total_pnl
         FROM bets
         WHERE event_date >= ? AND event_date <= ? AND status != 'open'
     """, (week_start, today_str))
@@ -290,18 +284,13 @@ def get_week_stats():
     
     conn.close()
     
-    # Combine results
-    total_risked = (trans_result[0] or 0) + (bets_result[0] or 0)
-    total_won = (trans_result[1] or 0)
-    total_pnl = (bets_result[1] or 0) if bets_result[1] else 0
-    
-    if trans_result[0] and trans_result[1]:
-        total_pnl += (trans_result[1] - trans_result[0])
+    # Combine results (total_won already contains P&L)
+    total_pnl = (trans_result[0] or 0) + (bets_result[0] or 0)
     
     return {
-        'total_risked': total_risked,
+        'total_risked': 0,
         'total_pnl': total_pnl,
-        'roi': (total_pnl / total_risked * 100) if total_risked > 0 else 0
+        'roi': 0
     }
 
 def get_month_stats():
@@ -315,7 +304,7 @@ def get_month_stats():
     
     # Aggregate transactions for the month (daily, weekly, and monthly entries only)
     cursor.execute("""
-        SELECT SUM(total_risked) as total_risked, SUM(total_won) as total_won
+        SELECT SUM(total_won) as total_pnl
         FROM transactions
         WHERE event_date >= ? AND event_date <= ? AND timeframe_type IN ('daily', 'weekly', 'monthly')
     """, (month_start, today_str))
@@ -324,7 +313,7 @@ def get_month_stats():
     
     # Settled bets for the month
     cursor.execute("""
-        SELECT SUM(amount_risked) as total_risked, SUM(pnl) as total_pnl
+        SELECT SUM(pnl) as total_pnl
         FROM bets
         WHERE event_date >= ? AND event_date <= ? AND status != 'open'
     """, (month_start, today_str))
@@ -333,18 +322,13 @@ def get_month_stats():
     
     conn.close()
     
-    # Combine results
-    total_risked = (trans_result[0] or 0) + (bets_result[0] or 0)
-    total_won = (trans_result[1] or 0)
-    total_pnl = (bets_result[1] or 0) if bets_result[1] else 0
-    
-    if trans_result[0] and trans_result[1]:
-        total_pnl += (trans_result[1] - trans_result[0])
+    # Combine results (total_won already contains P&L)
+    total_pnl = (trans_result[0] or 0) + (bets_result[0] or 0)
     
     return {
-        'total_risked': total_risked,
+        'total_risked': 0,
         'total_pnl': total_pnl,
-        'roi': (total_pnl / total_risked * 100) if total_risked > 0 else 0
+        'roi': 0
     }
 
 def get_alltime_stats():
@@ -354,7 +338,7 @@ def get_alltime_stats():
     
     # Aggregate all transactions (all timeframes)
     cursor.execute("""
-        SELECT SUM(total_risked) as total_risked, SUM(total_won) as total_won
+        SELECT SUM(total_won) as total_pnl
         FROM transactions
     """)
     
@@ -362,7 +346,7 @@ def get_alltime_stats():
     
     # All settled bets
     cursor.execute("""
-        SELECT SUM(amount_risked) as total_risked, SUM(pnl) as total_pnl
+        SELECT SUM(pnl) as total_pnl
         FROM bets
         WHERE status != 'open'
     """)
@@ -371,18 +355,13 @@ def get_alltime_stats():
     
     conn.close()
     
-    # Combine results
-    total_risked = (trans_result[0] or 0) + (bets_result[0] or 0)
-    total_won = (trans_result[1] or 0)
-    total_pnl = (bets_result[1] or 0) if bets_result[1] else 0
-    
-    if trans_result[0] and trans_result[1]:
-        total_pnl += (trans_result[1] - trans_result[0])
+    # Combine results (total_won already contains P&L)
+    total_pnl = (trans_result[0] or 0) + (bets_result[0] or 0)
     
     return {
-        'total_risked': total_risked,
+        'total_risked': 0,
         'total_pnl': total_pnl,
-        'roi': (total_pnl / total_risked * 100) if total_risked > 0 else 0
+        'roi': 0
     }
 
 # ============================================================================
