@@ -579,7 +579,8 @@ if page == "📊 Dashboard":
                 orientation='h',
                 marker=dict(color=colors),
                 text=book_df['pnl'].apply(lambda x: f"${x:.2f}"),
-                textposition='outside'
+                textposition='outside',
+                textfont=dict(size=12)
             ))
             
             fig2.update_layout(
@@ -588,7 +589,8 @@ if page == "📊 Dashboard":
                 hovermode='y',
                 template='plotly_white',
                 height=400,
-                showlegend=False
+                showlegend=False,
+                yaxis=dict(tickfont=dict(size=12))
             )
             
             st.plotly_chart(fig2, width='stretch')
@@ -701,24 +703,15 @@ elif page == "📝 Enter Bets":
                 elif pnl_amount is None:
                     st.error("Please enter a valid P&L amount.")
                 else:
-                    # For Book P&L: treat positive as won, negative as risked
+                    # For Book P&L: always set risked=0, won=pnl
                     timeframe_lower = timeframe.lower()
-                    if pnl_amount >= 0:
-                        upsert_transaction(
-                            str(event_date_pnl),
-                            book_name_pnl.strip(),
-                            0,
-                            pnl_amount,
-                            timeframe_lower
-                        )
-                    else:
-                        upsert_transaction(
-                            str(event_date_pnl),
-                            book_name_pnl.strip(),
-                            -pnl_amount,
-                            0,
-                            timeframe_lower
-                        )
+                    upsert_transaction(
+                        str(event_date_pnl),
+                        book_name_pnl.strip(),
+                        0,
+                        pnl_amount,
+                        timeframe_lower
+                    )
                     st.success(f"✅ P&L recorded: {book_name_pnl} on {event_date_pnl}")
                     st.rerun()
     
