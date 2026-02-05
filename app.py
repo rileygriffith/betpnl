@@ -602,50 +602,61 @@ elif page == "📝 Enter Bets":
         )
         
         with st.form("book_pnl_form", clear_on_submit=True):
+            # Initialize session state for dates if not exists
+            if 'last_pnl_date' not in st.session_state:
+                st.session_state.last_pnl_date = datetime.now().date()
+            if 'last_pnl_month' not in st.session_state:
+                st.session_state.last_pnl_month = datetime.now().month
+            if 'last_pnl_year' not in st.session_state:
+                st.session_state.last_pnl_year = datetime.now().year
+            
             # Show different inputs based on timeframe
             if timeframe == "Daily":
                 event_date_pnl = st.date_input(
                     "Event Date",
-                    value=datetime.now().date(),
+                    value=st.session_state.last_pnl_date,
                     key="pnl_date_daily"
                 )
+                st.session_state.last_pnl_date = event_date_pnl
             elif timeframe == "Weekly":
                 today = datetime.now().date()
                 week_start = today - timedelta(days=today.weekday())
                 event_date_pnl = st.date_input(
                     "Week Starting (Event Date)",
-                    value=week_start,
+                    value=st.session_state.last_pnl_date,
                     key="pnl_date_weekly"
                 )
+                st.session_state.last_pnl_date = event_date_pnl
             elif timeframe == "Monthly":
-                today = datetime.now().date()
                 col_m1, col_m2 = st.columns(2)
                 with col_m1:
                     month = st.number_input(
                         "Month (1-12)",
                         min_value=1,
                         max_value=12,
-                        value=today.month,
+                        value=st.session_state.last_pnl_month,
                         key="pnl_month"
                     )
+                    st.session_state.last_pnl_month = month
                 with col_m2:
                     year = st.number_input(
                         "Year",
                         min_value=2000,
                         max_value=2100,
-                        value=today.year,
+                        value=st.session_state.last_pnl_year,
                         key="pnl_year"
                     )
+                    st.session_state.last_pnl_year = year
                 event_date_pnl = datetime(int(year), int(month), 1).date()
             else:  # Yearly
-                today = datetime.now().date()
                 year = st.number_input(
                     "Year",
                     min_value=2000,
                     max_value=2100,
-                    value=today.year,
+                    value=st.session_state.last_pnl_year,
                     key="pnl_year_yearly"
                 )
+                st.session_state.last_pnl_year = year
                 event_date_pnl = datetime(int(year), 1, 1).date()
             
             book_name_pnl = st.text_input(
@@ -702,11 +713,16 @@ elif page == "📝 Enter Bets":
         st.write("Single bet with odds")
         
         with st.form("individual_bet_form", clear_on_submit=True):
+            # Initialize session state for bet date if not exists
+            if 'last_bet_date' not in st.session_state:
+                st.session_state.last_bet_date = datetime.now().date()
+            
             event_date_bet = st.date_input(
                 "Event Date",
-                value=datetime.now().date(),
+                value=st.session_state.last_bet_date,
                 key="bet_date"
             )
+            st.session_state.last_bet_date = event_date_bet
             book_name_bet = st.text_input(
                 "Sportsbook",
                 placeholder="e.g., DraftKings",
