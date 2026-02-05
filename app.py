@@ -485,13 +485,15 @@ if page == "📊 Dashboard":
         
         if combined_data:
             combined_df = pd.DataFrame(combined_data)
-            combined_df = combined_df.sort_values('date')
-            combined_df['cumulative_pnl'] = combined_df['pnl'].cumsum()
+            # Aggregate P&L by date (sum all books for each day)
+            daily_pnl = combined_df.groupby('date')['pnl'].sum().reset_index()
+            daily_pnl = daily_pnl.sort_values('date')
+            daily_pnl['cumulative_pnl'] = daily_pnl['pnl'].cumsum()
             
             fig = go.Figure()
             fig.add_trace(go.Scatter(
-                x=combined_df['date'],
-                y=combined_df['cumulative_pnl'],
+                x=daily_pnl['date'],
+                y=daily_pnl['cumulative_pnl'],
                 mode='lines+markers',
                 name='Cumulative P&L',
                 line=dict(color='#1f77b4', width=2),
@@ -506,7 +508,7 @@ if page == "📊 Dashboard":
                 height=400
             )
             
-            st.plotly_chart(fig, width='stretch')
+            st.plotly_chart(fig, use_container_width=True)
         
         st.subheader("Performance by Sportsbook")
         
@@ -551,6 +553,9 @@ if page == "📊 Dashboard":
             
             colors = ['#d62728' if x < 0 else '#2ca02c' for x in book_df['pnl']]
             
+            # Calculate appropriate height based on number of sportsbooks
+            height = max(400, 50 + (40 * len(book_df)))
+            
             fig2 = go.Figure()
             fig2.add_trace(go.Bar(
                 y=book_df['book'],
@@ -567,12 +572,12 @@ if page == "📊 Dashboard":
                 yaxis_title="Sportsbook",
                 hovermode='y',
                 template='plotly_white',
-                height=400,
+                height=height,
                 showlegend=False,
                 yaxis=dict(tickfont=dict(size=12))
             )
             
-            st.plotly_chart(fig2, width='stretch')
+            st.plotly_chart(fig2, use_container_width=True)
     else:
         st.info("No bets recorded yet. Head to Enter Bets to start tracking.")
 
@@ -582,6 +587,17 @@ elif page == "📝 Enter Bets":
     # ====================================================================
     
     st.header("📝 Enter Bets")
+    
+    # Initialize all session state variables at page load
+    # (before any form elements render)
+    if 'last_pnl_date' not in st.session_state:
+        st.session_state.last_pnl_date = datetime.now().date()
+    if 'last_pnl_month' not in st.session_state:
+        st.session_state.last_pnl_month = datetime.now().month
+    if 'last_pnl_year' not in st.session_state:
+        st.session_state.last_pnl_year = datetime.now().year
+    if 'last_bet_date' not in st.session_state:
+        st.session_state.last_bet_date = datetime.now().date()
     
     col_pnl, col_bet = st.columns(2)
     
@@ -602,14 +618,6 @@ elif page == "📝 Enter Bets":
         )
         
         with st.form("book_pnl_form", clear_on_submit=True):
-            # Initialize session state for dates if not exists
-            if 'last_pnl_date' not in st.session_state:
-                st.session_state.last_pnl_date = datetime.now().date()
-            if 'last_pnl_month' not in st.session_state:
-                st.session_state.last_pnl_month = datetime.now().month
-            if 'last_pnl_year' not in st.session_state:
-                st.session_state.last_pnl_year = datetime.now().year
-            
             # Show different inputs based on timeframe
             if timeframe == "Daily":
                 event_date_pnl = st.date_input(
@@ -713,10 +721,6 @@ elif page == "📝 Enter Bets":
         st.write("Single bet with odds")
         
         with st.form("individual_bet_form", clear_on_submit=True):
-            # Initialize session state for bet date if not exists
-            if 'last_bet_date' not in st.session_state:
-                st.session_state.last_bet_date = datetime.now().date()
-            
             event_date_bet = st.date_input(
                 "Event Date",
                 value=st.session_state.last_bet_date,
