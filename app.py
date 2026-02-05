@@ -383,7 +383,7 @@ with st.sidebar:
         - ⚡ Fast data entry
         - 📊 Performance by timeframe
         - 📈 Individual bet tracking
-        - � Local SQLite database
+        - 💾 Local SQLite database
         """
     )
 
@@ -546,131 +546,144 @@ if page == "📊 Dashboard":
 
 elif page == "📝 Enter Bets":
     # ====================================================================
-    # PAGE 2: DATA ENTRY
+    # PAGE 2: DATA ENTRY (Both modes on same page)
     # ====================================================================
     
-    st.header("� Enter Bets")
+    st.header("📝 Enter Bets")
     
-    entry_mode = st.radio(
-        "Entry Mode",
-        ["Book P&L", "Individual Bets"],
-        horizontal=True
-    )
+    col_pnl, col_bet = st.columns(2)
     
-    if entry_mode == "Book P&L":
-        # Mode 1: Overall daily P&L per book
-        st.subheader("Enter Daily Book P&L")
-        st.write("Use this when you have the overall profit/loss for a book on a specific day.")
+    # ====================================================================
+    # PANEL 1: Book P&L Entry
+    # ====================================================================
+    with col_pnl:
+        st.subheader("Book P&L")
+        st.write("Daily profit/loss for a book")
         
         with st.form("book_pnl_form", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                event_date = st.date_input(
-                    "Event Date",
-                    value=datetime.now().date()
-                )
-                book_name = st.text_input(
-                    "Sportsbook Name",
-                    placeholder="e.g., DraftKings, FanDuel, BetMGM"
-                )
-            
-            with col2:
-                risked_amount = st.number_input(
-                    "Total Risked ($)",
-                    min_value=0.0,
-                    step=1.0,
-                    value=0.0
-                )
-                won_amount = st.number_input(
-                    "Total Won ($)",
-                    min_value=0.0,
-                    step=1.0,
-                    value=0.0
-                )
+            event_date_pnl = st.date_input(
+                "Event Date",
+                value=datetime.now().date(),
+                key="pnl_date"
+            )
+            book_name_pnl = st.text_input(
+                "Sportsbook Name",
+                placeholder="e.g., DraftKings",
+                key="pnl_book"
+            )
+            risked_amount = st.number_input(
+                "Total Risked ($)",
+                min_value=0.0,
+                step=1.0,
+                value=None,
+                key="pnl_risked"
+            )
+            won_amount = st.number_input(
+                "Total Won ($)",
+                min_value=0.0,
+                step=1.0,
+                value=None,
+                key="pnl_won"
+            )
             
             # Real-time preview
-            net_pnl = won_amount - risked_amount
-            if net_pnl >= 0:
-                st.success(f"**Net P&L: +${net_pnl:.2f}**", icon="✅")
-            else:
-                st.error(f"**Net P&L: ${net_pnl:.2f}**", icon="❌")
+            if risked_amount is not None and won_amount is not None:
+                net_pnl = won_amount - risked_amount
+                if net_pnl >= 0:
+                    st.success(f"**Net P&L: +${net_pnl:.2f}**", icon="✅")
+                else:
+                    st.error(f"**Net P&L: ${net_pnl:.2f}**", icon="❌")
             
-            submitted = st.form_submit_button("📤 Submit Book P&L", use_container_width=True)
+            submitted_pnl = st.form_submit_button("📤 Submit P&L", use_container_width=True)
             
-            if submitted:
-                if not book_name.strip():
+            if submitted_pnl:
+                if not book_name_pnl.strip():
                     st.error("Please enter a sportsbook name.")
+                elif risked_amount is None or won_amount is None:
+                    st.error("Please enter both amounts.")
                 elif risked_amount == 0 and won_amount == 0:
-                    st.error("Please enter at least one amount.")
+                    st.error("Please enter at least one non-zero amount.")
                 else:
                     upsert_transaction(
-                        str(event_date),
-                        book_name.strip(),
+                        str(event_date_pnl),
+                        book_name_pnl.strip(),
                         risked_amount,
                         won_amount
                     )
-                    st.success(f"✅ P&L recorded: {book_name} on {event_date}")
+                    st.success(f"✅ P&L recorded: {book_name_pnl} on {event_date_pnl}")
                     st.rerun()
     
-    else:
-        # Mode 2: Individual bets with odds
-        st.subheader("Enter Individual Bets")
-        st.write("Log individual bets with American odds. Mark as open until they settle.")
+    # ====================================================================
+    # PANEL 2: Individual Bet Entry
+    # ====================================================================
+    with col_bet:
+        st.subheader("Individual Bet")
+        st.write("Single bet with odds")
         
         with st.form("individual_bet_form", clear_on_submit=True):
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                event_date = st.date_input(
-                    "Bet Date",
-                    value=datetime.now().date()
-                )
-                book_name = st.text_input(
-                    "Sportsbook",
-                    placeholder="e.g., DraftKings"
-                )
-                description = st.text_input(
-                    "Bet Description",
-                    placeholder="e.g., NBA Parlay"
-                )
-            
-            with col2:
-                amount_risked = st.number_input(
-                    "Amount Risked ($)",
-                    min_value=0.01,
-                    step=1.0,
-                    value=10.0
-                )
-                american_odds = st.number_input(
-                    "American Odds",
-                    value=-110,
-                    step=10
-                )
+            event_date_bet = st.date_input(
+                "Bet Date",
+                value=datetime.now().date(),
+                key="bet_date"
+            )
+            book_name_bet = st.text_input(
+                "Sportsbook",
+                placeholder="e.g., DraftKings",
+                key="bet_book"
+            )
+            description = st.text_input(
+                "Bet Description",
+                placeholder="e.g., NBA Parlay",
+                key="bet_desc"
+            )
+            amount_risked = st.number_input(
+                "Amount Risked ($)",
+                min_value=0.01,
+                step=1.0,
+                value=None,
+                key="bet_risked"
+            )
+            american_odds = st.number_input(
+                "American Odds",
+                value=-110,
+                step=10,
+                key="bet_odds"
+            )
             
             bet_status = st.radio(
                 "Status",
                 ["open", "won", "lost"],
-                horizontal=True
+                horizontal=True,
+                key="bet_status"
             )
             
+            # Check for duplicate amounts
+            if amount_risked is not None and amount_risked > 0:
+                duplicate = check_for_recent_duplicate(amount_risked)
+                if duplicate:
+                    st.warning(
+                        f"⚠️ **Possible duplicate**: "
+                        f"{duplicate['amount']} @ {duplicate['book']} on {duplicate['date']}"
+                    )
+            
             # Calculate potential payout
-            if bet_status == "open":
-                st.info("💡 Potential return depends on outcome. Bet marked as open.")
-            else:
-                if bet_status == "won":
-                    pnl = calculate_pnl_from_odds(amount_risked, american_odds, True)
-                    st.success(f"✅ **Payout: +${pnl:.2f}**")
+            if amount_risked is not None and amount_risked > 0:
+                if bet_status == "open":
+                    st.info("💡 Potential return depends on outcome. Bet marked as open.")
                 else:
-                    pnl = -amount_risked
-                    st.error(f"❌ **Loss: ${pnl:.2f}**")
+                    if bet_status == "won":
+                        pnl = calculate_pnl_from_odds(amount_risked, american_odds, True)
+                        st.success(f"✅ **Payout: +${pnl:.2f}**")
+                    else:
+                        pnl = -amount_risked
+                        st.error(f"❌ **Loss: ${pnl:.2f}**")
             
-            submitted = st.form_submit_button("📤 Submit Bet", use_container_width=True)
+            submitted_bet = st.form_submit_button("📤 Submit Bet", use_container_width=True)
             
-            if submitted:
-                if not book_name.strip():
+            if submitted_bet:
+                if not book_name_bet.strip():
                     st.error("Please enter a sportsbook name.")
-                elif amount_risked <= 0:
+                elif amount_risked is None or amount_risked <= 0:
                     st.error("Amount risked must be greater than 0.")
                 else:
                     pnl_value = None
@@ -678,15 +691,15 @@ elif page == "📝 Enter Bets":
                         pnl_value = calculate_pnl_from_odds(amount_risked, american_odds, bet_status == "won")
                     
                     insert_bet(
-                        str(event_date),
-                        book_name.strip(),
+                        str(event_date_bet),
+                        book_name_bet.strip(),
                         description if description.strip() else None,
                         amount_risked,
                         american_odds,
                         bet_status,
                         pnl_value
                     )
-                    st.success(f"✅ Bet recorded: {book_name} - ${amount_risked} @ {american_odds}")
+                    st.success(f"✅ Bet recorded: {book_name_bet} - ${amount_risked} @ {american_odds}")
                     st.rerun()
     
     # Display recent entries
@@ -750,7 +763,7 @@ elif page == "📋 Ledger":
                 num_rows="fixed"
             )
             
-            if st.button("💾 Sync Changes", use_container_width=True):
+            if st.button("💾 Sync Changes", use_container_width=True, key="trans_sync"):
                 try:
                     conn = get_db_connection()
                     cursor = conn.cursor()
@@ -761,8 +774,9 @@ elif page == "📋 Ledger":
                             INSERT INTO transactions (event_date, book, total_risked, total_won, last_updated)
                             VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
                         """, (row['Date'], row['Book'], row['Risked ($)'], row['Won ($)']))
+                        
+                        conn.commit()
                     
-                    conn.commit()
                     conn.close()
                     st.success("✅ Changes saved!")
                     st.rerun()
@@ -792,7 +806,7 @@ elif page == "📋 Ledger":
                 )
             
             with col3:
-                if st.button("🗑️ Delete", use_container_width=True, type="secondary"):
+                if st.button("🗑️ Delete", use_container_width=True, type="secondary", key="trans_delete_btn"):
                     delete_transaction(selected_date, selected_book)
                     st.success("✅ Deleted!")
                     st.rerun()
@@ -838,7 +852,7 @@ elif page == "📋 Ledger":
                 )
             
             with col3:
-                if st.button("✏️ Update", use_container_width=True):
+                if st.button("✏️ Update", use_container_width=True, key="bet_update_btn"):
                     selected_bet = df_bets[df_bets['id'] == bet_to_update].iloc[0]
                     
                     pnl_value = None
@@ -869,11 +883,10 @@ elif page == "📋 Ledger":
                 )
             
             with col2:
-                if st.button("🗑️ Delete", use_container_width=True, type="secondary"):
+                if st.button("🗑️ Delete", use_container_width=True, type="secondary", key="bet_delete_btn"):
                     delete_bet(bet_to_delete)
                     st.success("✅ Deleted!")
                     st.rerun()
         
         else:
             st.info("No individual bets yet.")
-
