@@ -448,38 +448,28 @@ if page == "📊 Dashboard":
     
     # Get stats for different timeframes
     today_stats = get_today_stats()
-    week_stats = get_week_stats()
     month_stats = get_month_stats()
     alltime_stats = get_alltime_stats()
     
     # Display KPI cards
     st.subheader("Performance Overview")
     
-    col1, col2, col3, col4 = st.columns(4)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.subheader("Today")
-        st.metric("P&L", f"${today_stats['total_pnl']:,.2f}")
-        st.metric("Risked", f"${today_stats['total_risked']:,.2f}")
-        st.metric("ROI %", f"{today_stats['roi']:.2f}%")
+        color = "green" if today_stats['total_pnl'] >= 0 else "red"
+        st.markdown(f"<h3 style='color: {color};'>${today_stats['total_pnl']:,.2f}</h3>", unsafe_allow_html=True)
     
     with col2:
-        st.subheader("This Week")
-        st.metric("P&L", f"${week_stats['total_pnl']:,.2f}")
-        st.metric("Risked", f"${week_stats['total_risked']:,.2f}")
-        st.metric("ROI %", f"{week_stats['roi']:.2f}%")
+        st.subheader("This Month")
+        color = "green" if month_stats['total_pnl'] >= 0 else "red"
+        st.markdown(f"<h3 style='color: {color};'>${month_stats['total_pnl']:,.2f}</h3>", unsafe_allow_html=True)
     
     with col3:
-        st.subheader("This Month")
-        st.metric("P&L", f"${month_stats['total_pnl']:,.2f}")
-        st.metric("Risked", f"${month_stats['total_risked']:,.2f}")
-        st.metric("ROI %", f"{month_stats['roi']:.2f}%")
-    
-    with col4:
         st.subheader("All Time")
-        st.metric("P&L", f"${alltime_stats['total_pnl']:,.2f}")
-        st.metric("Risked", f"${alltime_stats['total_risked']:,.2f}")
-        st.metric("ROI %", f"{alltime_stats['roi']:.2f}%")
+        color = "green" if alltime_stats['total_pnl'] >= 0 else "red"
+        st.markdown(f"<h3 style='color: {color};'>${alltime_stats['total_pnl']:,.2f}</h3>", unsafe_allow_html=True)
     
     st.divider()
     
