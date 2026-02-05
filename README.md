@@ -1,63 +1,47 @@
 # 🎰 Betting Tracker
 
-Fast, local sports betting tracker with real-time analytics. Enter daily P&L or individual bets with odds, view cumulative performance, and manage your data.
+Fast, local sports betting tracker with real-time analytics. Enter P&L by day, week, month, or year, or log individual bets with American odds.
 
 ## Quick Start
 
-### Prerequisites
-- Python 3.8+
-- `uv` (fast Python package manager) - install with `curl -LsSf https://astral.sh/uv/install.sh | sh`
-
-### Setup & Run
-
 ```bash
-cd /path/to/sports-betting-tracker
-uv sync
-uv run streamlit run app.py
+cd sports-betting-tracker
+uv venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+uv pip install -r requirements.txt
+streamlit run app.py
 ```
 
-This launches the app at `http://localhost:8501`.
+Opens at `http://localhost:8501`
 
 ## Features
 
-- **Dashboard**: Today/Week/Month P&L and cumulative charts
-- **Enter Bets**: Two panels for quick data entry
-  - Book P&L: Single number P&L per book per day
-  - Individual Bets: Bets with American odds (auto-calculates payout)
-- **Data Management**: Edit/delete rows directly in the tables
+- **Dashboard**: Today/Week/Month P&L KPIs and cumulative charts
+- **Enter Bets**: Two side-by-side panels
+  - **Book P&L**: Pick Daily/Weekly/Monthly/Yearly, enter aggregate profit/loss
+  - **Individual Bets**: Log single bets with American odds, mark as open/won/lost
+- **Data Management**: Edit/delete rows directly in tables
 - **Local Storage**: SQLite database - all data stays on your machine
+- **Duplicate Detection**: Warns on non-round amounts placed recently
 
-## Data Entry
+## How It Works
 
-### Book P&L
-- **Date** + **Book** + **P&L Amount** → Done
-- Positive = win, negative = loss
+**Book P&L** entries are tracked by timeframe:
+- **Daily**: Enter P&L for a specific day
+- **Weekly**: Enter P&L for a week starting on a specific date
+- **Monthly**: Enter P&L for a specific month/year
+- **Yearly**: Enter P&L for a specific year
 
-### Individual Bets
-- **Date** + **Book** + **Amount** + **Odds** + **Status** → Done
-- Status: "open" (unsettled), "won", "lost"
-- App auto-calculates payout based on American odds
-- Duplicate detection for non-round amounts
+Analytics are smart about aggregation:
+- "Today" shows only daily entries
+- "This Week" shows daily + weekly entries
+- "This Month" shows daily + weekly + monthly entries
 
-## Database
-
-Two tables in `bet_tracker.db`:
-- **transactions**: Aggregated daily P&L per book
-- **bets**: Individual bets with full details
-
-Edit or delete any row directly in the Data page.
+**Individual Bets** are always daily and auto-calculate payouts from American odds.
 
 ## Tips
 
-- Non-round amounts (52.72, 103.50) get duplicate warnings
+- Non-round amounts (52.72, 103.50) trigger duplicate warnings
 - Open bets don't count toward P&L until settled
-- P&L charts combine both transaction and settled bet data
-- All calculations are instant - no sync button needed
-
-## License
-
-Open source. Use freely for personal or commercial purposes.
-
----
-
-**Happy tracking! 🚀**
+- All P&L charts combine both transactions and settled bets
+- All changes save instantly to `bet_tracker.db`

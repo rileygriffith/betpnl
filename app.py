@@ -17,15 +17,17 @@ def init_db():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    # Aggregate transactions table (book P&L by day)
+    # Aggregate transactions table (book P&L by day/week/month/year)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS transactions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
             event_date DATE NOT NULL,
             book TEXT NOT NULL,
+            timeframe_type TEXT NOT NULL DEFAULT 'daily',
             total_risked REAL NOT NULL DEFAULT 0,
             total_won REAL NOT NULL DEFAULT 0,
             last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (event_date, book)
+            UNIQUE(event_date, book, timeframe_type)
         )
     """)
     
@@ -57,22 +59,22 @@ def get_db_connection():
 # TRANSACTION UTILITIES (Book P&L)
 # ============================================================================
 
-def upsert_transaction(event_date, book, risked, won):
+def upsert_transaction(event_date, book, risked, won, timeframe_type='daily'):
     """
     Insert or update a transaction using UPSERT logic.
-    Increments total_risked and total_won for the given (event_date, book) pair.
+    Increments total_risked and total_won for the given (event_date, book, timeframe_type) tuple.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
     
     cursor.execute("""
-        INSERT INTO transactions (event_date, book, total_risked, total_won, last_updated)
-        VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(event_date, book) DO UPDATE SET
+        INSERT INTO transactions (event_date, book, timeframe_type, total_risked, total_won, last_updated)
+        VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(event_date, book, timeframe_type) DO UPDATE SET
             total_risked = total_risked + ?,
             total_won = total_won + ?,
             last_updated = CURRENT_TIMESTAMP
-    """, (event_date, book, risked, won, risked, won))
+    """, (event_date, book, timeframe_type, risked, won, risked, won))
     
     conn.commit()
     conn.close()
@@ -80,7 +82,7 @@ def upsert_transaction(event_date, book, risked, won):
 def get_all_transactions():
     """Fetch all transactions from the database as a DataFrame."""
     conn = get_db_connection()
-    query = "SELECT event_date, book, total_risked, total_won, last_updated FROM transactions ORDER BY event_date DESC"
+    query = "SELECT event_date, book, timeframe_type, total_risked, total_won, last_updated FROM transactions ORDER BY event_date DESC"
     df = pd.read_sql_query(query, conn)
     conn.close()
     
@@ -90,17 +92,18 @@ def get_all_transactions():
     
     return df
 
-def delete_transaction(event_date, book):
-    """Delete a transaction by event_date and book."""
+def delete_transaction(event_date, book, timeframe_type='daily'):
+    """Delete a transaction by event_date, book, and timeframe_type."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    cursor.execute("DELETE FROM transactions WHERE event_date = ? AND book = ?", (event_date, book))
+    cursor.execute("DELETE FROM transactions WHERE event_date = ? AND book = ? AND timeframe_type = ?", 
+                   (event_date, book, timeframe_type))
     
     conn.commit()
     conn.close()
 
-def update_transaction(event_date, book, total_risked, total_won):
+def update_transaction(event_date, book, total_risked, total_won, timeframe_type='daily'):
     """Update a transaction with new values."""
     conn = get_db_connection()
     cursor = conn.cursor()
@@ -108,8 +111,8 @@ def update_transaction(event_date, book, total_risked, total_won):
     cursor.execute("""
         UPDATE transactions 
         SET total_risked = ?, total_won = ?, last_updated = CURRENT_TIMESTAMP
-        WHERE event_date = ? AND book = ?
-    """, (total_risked, total_won, event_date, book))
+        WHERE event_date = ? AND book = ? AND timeframe_type = ?
+    """, (total_risked, total_won, event_date, book, timeframe_type))
     
     conn.commit()
     conn.close()
@@ -219,16 +222,16 @@ def delete_bet(bet_id):
 # ============================================================================
 
 def get_today_stats():
-    """Get today's P&L stats."""
+    """Get today's P&L stats (daily entries only)."""
     today = datetime.now().strftime('%Y-%m-%d')
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Aggregate transactions for today
+    # Aggregate transactions for today (daily entries only)
     cursor.execute("""
         SELECT SUM(total_risked) as total_risked, SUM(total_won) as total_won
         FROM transactions
-        WHERE event_date = ?
+        WHERE event_date = ? AND timeframe_type = 'daily'
     """, (today,))
     
     trans_result = cursor.fetchone()
@@ -259,7 +262,7 @@ def get_today_stats():
     }
 
 def get_week_stats():
-    """Get this week's P&L stats."""
+    """Get this week's P&L stats (daily and weekly entries only)."""
     today = datetime.now()
     week_start = (today - timedelta(days=today.weekday())).strftime('%Y-%m-%d')
     today_str = today.strftime('%Y-%m-%d')
@@ -267,11 +270,11 @@ def get_week_stats():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Aggregate transactions for the week
+    # Aggregate transactions for the week (daily and weekly entries only)
     cursor.execute("""
         SELECT SUM(total_risked) as total_risked, SUM(total_won) as total_won
         FROM transactions
-        WHERE event_date >= ? AND event_date <= ?
+        WHERE event_date >= ? AND event_date <= ? AND timeframe_type IN ('daily', 'weekly')
     """, (week_start, today_str))
     
     trans_result = cursor.fetchone()
@@ -302,7 +305,7 @@ def get_week_stats():
     }
 
 def get_month_stats():
-    """Get this month's P&L stats."""
+    """Get this month's P&L stats (daily, weekly, and monthly entries only)."""
     today = datetime.now()
     month_start = today.replace(day=1).strftime('%Y-%m-%d')
     today_str = today.strftime('%Y-%m-%d')
@@ -310,11 +313,11 @@ def get_month_stats():
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # Aggregate transactions for the month
+    # Aggregate transactions for the month (daily, weekly, and monthly entries only)
     cursor.execute("""
         SELECT SUM(total_risked) as total_risked, SUM(total_won) as total_won
         FROM transactions
-        WHERE event_date >= ? AND event_date <= ?
+        WHERE event_date >= ? AND event_date <= ? AND timeframe_type IN ('daily', 'weekly', 'monthly')
     """, (month_start, today_str))
     
     trans_result = cursor.fetchone()
@@ -365,16 +368,12 @@ init_db()
 with st.sidebar:
     st.title("🎰 Betting Tracker")
     
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if st.button("📊 Dashboard", width='stretch', key="nav_dashboard"):
-            st.session_state.page = "📊 Dashboard"
-    with col2:
-        if st.button("📝 Enter", width='stretch', key="nav_enter"):
-            st.session_state.page = "📝 Enter Bets"
-    with col3:
-        if st.button("📋 Data", width='stretch', key="nav_ledger"):
-            st.session_state.page = "📋 Ledger"
+    if st.button("📊 Dashboard", width='stretch', key="nav_dashboard"):
+        st.session_state.page = "📊 Dashboard"
+    if st.button("📝 Enter", width='stretch', key="nav_enter"):
+        st.session_state.page = "📝 Enter Bets"
+    if st.button("📋 Data", width='stretch', key="nav_ledger"):
+        st.session_state.page = "📋 Ledger"
     
     if "page" not in st.session_state:
         st.session_state.page = "📊 Dashboard"
@@ -569,14 +568,64 @@ elif page == "📝 Enter Bets":
     # ====================================================================
     with col_pnl:
         st.subheader("Book P&L")
-        st.write("Daily profit/loss for a book")
+        st.write("Profit/loss for a book")
+        
+        # Timeframe selector (outside form so it can trigger rerun)
+        timeframe = st.radio(
+            "Timeframe",
+            ["Daily", "Weekly", "Monthly", "Yearly"],
+            horizontal=True,
+            index=0,
+            key="pnl_timeframe"
+        )
         
         with st.form("book_pnl_form", clear_on_submit=True):
-            event_date_pnl = st.date_input(
-                "Event Date",
-                value=datetime.now().date(),
-                key="pnl_date"
-            )
+            # Show different inputs based on timeframe
+            if timeframe == "Daily":
+                event_date_pnl = st.date_input(
+                    "Date",
+                    value=datetime.now().date(),
+                    key="pnl_date_daily"
+                )
+            elif timeframe == "Weekly":
+                today = datetime.now().date()
+                week_start = today - timedelta(days=today.weekday())
+                event_date_pnl = st.date_input(
+                    "Week Starting",
+                    value=week_start,
+                    key="pnl_date_weekly"
+                )
+            elif timeframe == "Monthly":
+                today = datetime.now().date()
+                col_m1, col_m2 = st.columns(2)
+                with col_m1:
+                    month = st.number_input(
+                        "Month (1-12)",
+                        min_value=1,
+                        max_value=12,
+                        value=today.month,
+                        key="pnl_month"
+                    )
+                with col_m2:
+                    year = st.number_input(
+                        "Year",
+                        min_value=2000,
+                        max_value=2100,
+                        value=today.year,
+                        key="pnl_year"
+                    )
+                event_date_pnl = datetime(int(year), int(month), 1).date()
+            else:  # Yearly
+                today = datetime.now().date()
+                year = st.number_input(
+                    "Year",
+                    min_value=2000,
+                    max_value=2100,
+                    value=today.year,
+                    key="pnl_year_yearly"
+                )
+                event_date_pnl = datetime(int(year), 1, 1).date()
+            
             book_name_pnl = st.text_input(
                 "Sportsbook Name",
                 placeholder="e.g., DraftKings",
@@ -605,19 +654,22 @@ elif page == "📝 Enter Bets":
                     st.error("Please enter P&L amount.")
                 else:
                     # For Book P&L: treat positive as won, negative as risked
+                    timeframe_lower = timeframe.lower()
                     if pnl_amount >= 0:
                         upsert_transaction(
                             str(event_date_pnl),
                             book_name_pnl.strip(),
                             0,
-                            pnl_amount
+                            pnl_amount,
+                            timeframe_lower
                         )
                     else:
                         upsert_transaction(
                             str(event_date_pnl),
                             book_name_pnl.strip(),
                             -pnl_amount,
-                            0
+                            0,
+                            timeframe_lower
                         )
                     st.success(f"✅ P&L recorded: {book_name_pnl} on {event_date_pnl}")
                     st.rerun()
@@ -762,8 +814,8 @@ elif page == "📋 Ledger":
             # Format for display
             display_trans = df_trans.copy()
             display_trans['event_date'] = display_trans['event_date'].dt.strftime('%Y-%m-%d')
-            display_trans = display_trans[['event_date', 'book', 'total_risked', 'total_won', 'net_profit']]
-            display_trans.columns = ['Date', 'Book', 'Risked', 'Won', 'P&L']
+            display_trans = display_trans[['event_date', 'book', 'timeframe_type', 'total_risked', 'total_won', 'net_profit']]
+            display_trans.columns = ['Date', 'Book', 'Type', 'Risked', 'Won', 'P&L']
             
             # Editable table
             edited_trans = st.data_editor(
@@ -780,7 +832,7 @@ elif page == "📋 Ledger":
                 for idx in deleted_rows:
                     if idx < len(display_trans):
                         row = display_trans.iloc[idx]
-                        delete_transaction(row['Date'], row['Book'])
+                        delete_transaction(row['Date'], row['Book'], row['Type'])
                 st.success("✅ Row deleted!")
                 st.rerun()
             
@@ -790,7 +842,7 @@ elif page == "📋 Ledger":
                     if idx < len(display_trans):
                         orig = display_trans.iloc[idx]
                         if not row.equals(orig):
-                            update_transaction(row['Date'], row['Book'], row['Risked'], row['Won'])
+                            update_transaction(row['Date'], row['Book'], row['Risked'], row['Won'], row['Type'])
                 st.success("✅ Changes saved!")
                 st.rerun()
         else:
