@@ -347,6 +347,44 @@ def get_month_stats():
         'roi': (total_pnl / total_risked * 100) if total_risked > 0 else 0
     }
 
+def get_alltime_stats():
+    """Get all-time P&L stats (all timeframes)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Aggregate all transactions (all timeframes)
+    cursor.execute("""
+        SELECT SUM(total_risked) as total_risked, SUM(total_won) as total_won
+        FROM transactions
+    """)
+    
+    trans_result = cursor.fetchone()
+    
+    # All settled bets
+    cursor.execute("""
+        SELECT SUM(amount_risked) as total_risked, SUM(pnl) as total_pnl
+        FROM bets
+        WHERE status != 'open'
+    """)
+    
+    bets_result = cursor.fetchone()
+    
+    conn.close()
+    
+    # Combine results
+    total_risked = (trans_result[0] or 0) + (bets_result[0] or 0)
+    total_won = (trans_result[1] or 0)
+    total_pnl = (bets_result[1] or 0) if bets_result[1] else 0
+    
+    if trans_result[0] and trans_result[1]:
+        total_pnl += (trans_result[1] - trans_result[0])
+    
+    return {
+        'total_risked': total_risked,
+        'total_pnl': total_pnl,
+        'roi': (total_pnl / total_risked * 100) if total_risked > 0 else 0
+    }
+
 # ============================================================================
 # STREAMLIT PAGE CONFIGURATION
 # ============================================================================
@@ -412,11 +450,12 @@ if page == "📊 Dashboard":
     today_stats = get_today_stats()
     week_stats = get_week_stats()
     month_stats = get_month_stats()
+    alltime_stats = get_alltime_stats()
     
     # Display KPI cards
     st.subheader("Performance Overview")
     
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     
     with col1:
         st.subheader("Today")
@@ -436,6 +475,12 @@ if page == "📊 Dashboard":
         st.metric("Risked", f"${month_stats['total_risked']:,.2f}")
         st.metric("ROI %", f"{month_stats['roi']:.2f}%")
     
+    with col4:
+        st.subheader("All Time")
+        st.metric("P&L", f"${alltime_stats['total_pnl']:,.2f}")
+        st.metric("Risked", f"${alltime_stats['total_risked']:,.2f}")
+        st.metric("ROI %", f"{alltime_stats['roi']:.2f}%")
+    
     st.divider()
     
     # Get all transactions for charts
@@ -443,13 +488,18 @@ if page == "📊 Dashboard":
     df_bets = get_all_bets()
     
     if not df_trans.empty or not df_bets.empty:
-        st.subheader("Cumulative Profit/Loss Over Time")
+        st.subheader("Cumulative Profit/Loss Over Time (Latest Month)")
+        
+        # Filter to only last month's data
+        today = datetime.now()
+        month_ago = today - timedelta(days=30)
         
         # Combine transactions and settled bets data
         combined_data = []
         
         if not df_trans.empty:
-            for idx, row in df_trans.iterrows():
+            recent_trans = df_trans[df_trans['event_date'] >= month_ago]
+            for idx, row in recent_trans.iterrows():
                 combined_data.append({
                     'date': row['event_date'],
                     'pnl': row['net_profit']
@@ -457,7 +507,8 @@ if page == "📊 Dashboard":
         
         if not df_bets.empty:
             settled_bets = df_bets[df_bets['status'] != 'open']
-            for idx, row in settled_bets.iterrows():
+            recent_bets = settled_bets[settled_bets['event_date'] >= month_ago]
+            for idx, row in recent_bets.iterrows():
                 combined_data.append({
                     'date': row['event_date'],
                     'pnl': row['pnl'] if row['pnl'] else 0
@@ -631,12 +682,19 @@ elif page == "📝 Enter Bets":
                 placeholder="e.g., DraftKings",
                 key="pnl_book"
             )
-            pnl_amount = st.number_input(
+            pnl_input = st.text_input(
                 "P&L ($)",
-                step=0.01,
-                value=None,
+                placeholder="e.g., 50.00 or -25.50",
                 key="pnl_amount"
             )
+            
+            # Convert to float
+            pnl_amount = None
+            if pnl_input.strip():
+                try:
+                    pnl_amount = float(pnl_input)
+                except ValueError:
+                    pnl_amount = None
             
             # Real-time preview
             if pnl_amount is not None:
@@ -651,7 +709,7 @@ elif page == "📝 Enter Bets":
                 if not book_name_pnl.strip():
                     st.error("Please enter a sportsbook name.")
                 elif pnl_amount is None:
-                    st.error("Please enter P&L amount.")
+                    st.error("Please enter a valid P&L amount.")
                 else:
                     # For Book P&L: treat positive as won, negative as risked
                     timeframe_lower = timeframe.lower()
@@ -697,19 +755,35 @@ elif page == "📝 Enter Bets":
                 placeholder="e.g., NBA Parlay",
                 key="bet_desc"
             )
-            amount_risked = st.number_input(
+            amount_risked_input = st.text_input(
                 "Amount Risked ($)",
-                min_value=0.01,
-                step=1.0,
-                value=None,
+                placeholder="e.g., 50.00",
                 key="bet_risked"
             )
-            american_odds = st.number_input(
+            
+            # Convert to float
+            amount_risked = None
+            if amount_risked_input.strip():
+                try:
+                    amount_risked = float(amount_risked_input)
+                    if amount_risked <= 0:
+                        amount_risked = None
+                except ValueError:
+                    amount_risked = None
+            
+            american_odds_input = st.text_input(
                 "American Odds",
-                value=-110,
-                step=10,
+                value="-110",
                 key="bet_odds"
             )
+            
+            # Convert to float
+            american_odds = None
+            if american_odds_input.strip():
+                try:
+                    american_odds = float(american_odds_input)
+                except ValueError:
+                    american_odds = None
             
             bet_status = st.radio(
                 "Status",
@@ -728,7 +802,7 @@ elif page == "📝 Enter Bets":
                     )
             
             # Calculate potential payout
-            if amount_risked is not None and amount_risked > 0:
+            if amount_risked is not None and amount_risked > 0 and american_odds is not None:
                 if bet_status == "open":
                     st.info("💡 Potential return depends on outcome. Bet marked as open.")
                 else:
@@ -745,7 +819,9 @@ elif page == "📝 Enter Bets":
                 if not book_name_bet.strip():
                     st.error("Please enter a sportsbook name.")
                 elif amount_risked is None or amount_risked <= 0:
-                    st.error("Amount risked must be greater than 0.")
+                    st.error("Please enter a valid amount risked.")
+                elif american_odds is None:
+                    st.error("Please enter valid American odds.")
                 else:
                     pnl_value = None
                     if bet_status != "open":
