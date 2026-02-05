@@ -624,7 +624,7 @@ elif page == "📝 Enter Bets":
             # Show different inputs based on timeframe
             if timeframe == "Daily":
                 event_date_pnl = st.date_input(
-                    "Date",
+                    "Event Date",
                     value=datetime.now().date(),
                     key="pnl_date_daily"
                 )
@@ -632,7 +632,7 @@ elif page == "📝 Enter Bets":
                 today = datetime.now().date()
                 week_start = today - timedelta(days=today.weekday())
                 event_date_pnl = st.date_input(
-                    "Week Starting",
+                    "Week Starting (Event Date)",
                     value=week_start,
                     key="pnl_date_weekly"
                 )
@@ -731,7 +731,7 @@ elif page == "📝 Enter Bets":
         
         with st.form("individual_bet_form", clear_on_submit=True):
             event_date_bet = st.date_input(
-                "Bet Date",
+                "Event Date",
                 value=datetime.now().date(),
                 key="bet_date"
             )
