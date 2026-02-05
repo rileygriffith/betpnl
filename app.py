@@ -364,11 +364,22 @@ init_db()
 
 with st.sidebar:
     st.title("🎰 Betting Tracker")
-    page = st.radio(
-        "Navigate",
-        ["📊 Dashboard", "📝 Enter Bets", "📋 Ledger"],
-        label_visibility="collapsed"
-    )
+    
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("📊 Dashboard", width='stretch', key="nav_dashboard"):
+            st.session_state.page = "📊 Dashboard"
+    with col2:
+        if st.button("📝 Enter", width='stretch', key="nav_enter"):
+            st.session_state.page = "📝 Enter Bets"
+    with col3:
+        if st.button("📋 Data", width='stretch', key="nav_ledger"):
+            st.session_state.page = "📋 Ledger"
+    
+    if "page" not in st.session_state:
+        st.session_state.page = "📊 Dashboard"
+    
+    page = st.session_state.page
     
     st.divider()
     
@@ -476,7 +487,7 @@ if page == "📊 Dashboard":
                 height=400
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width='stretch')
         
         st.subheader("Performance by Sportsbook")
         
@@ -540,7 +551,7 @@ if page == "📊 Dashboard":
                 showlegend=False
             )
             
-            st.plotly_chart(fig2, use_container_width=True)
+            st.plotly_chart(fig2, width='stretch')
     else:
         st.info("No bets recorded yet. Head to Enter Bets to start tracking.")
 
@@ -571,45 +582,43 @@ elif page == "📝 Enter Bets":
                 placeholder="e.g., DraftKings",
                 key="pnl_book"
             )
-            risked_amount = st.number_input(
-                "Total Risked ($)",
-                min_value=0.0,
-                step=1.0,
+            pnl_amount = st.number_input(
+                "P&L ($)",
+                step=0.01,
                 value=None,
-                key="pnl_risked"
-            )
-            won_amount = st.number_input(
-                "Total Won ($)",
-                min_value=0.0,
-                step=1.0,
-                value=None,
-                key="pnl_won"
+                key="pnl_amount"
             )
             
             # Real-time preview
-            if risked_amount is not None and won_amount is not None:
-                net_pnl = won_amount - risked_amount
-                if net_pnl >= 0:
-                    st.success(f"**Net P&L: +${net_pnl:.2f}**", icon="✅")
+            if pnl_amount is not None:
+                if pnl_amount >= 0:
+                    st.success(f"**P&L: +${pnl_amount:.2f}**", icon="✅")
                 else:
-                    st.error(f"**Net P&L: ${net_pnl:.2f}**", icon="❌")
+                    st.error(f"**P&L: ${pnl_amount:.2f}**", icon="❌")
             
-            submitted_pnl = st.form_submit_button("📤 Submit P&L", use_container_width=True)
+            submitted_pnl = st.form_submit_button("📤 Submit P&L", width='stretch')
             
             if submitted_pnl:
                 if not book_name_pnl.strip():
                     st.error("Please enter a sportsbook name.")
-                elif risked_amount is None or won_amount is None:
-                    st.error("Please enter both amounts.")
-                elif risked_amount == 0 and won_amount == 0:
-                    st.error("Please enter at least one non-zero amount.")
+                elif pnl_amount is None:
+                    st.error("Please enter P&L amount.")
                 else:
-                    upsert_transaction(
-                        str(event_date_pnl),
-                        book_name_pnl.strip(),
-                        risked_amount,
-                        won_amount
-                    )
+                    # For Book P&L: treat positive as won, negative as risked
+                    if pnl_amount >= 0:
+                        upsert_transaction(
+                            str(event_date_pnl),
+                            book_name_pnl.strip(),
+                            0,
+                            pnl_amount
+                        )
+                    else:
+                        upsert_transaction(
+                            str(event_date_pnl),
+                            book_name_pnl.strip(),
+                            -pnl_amount,
+                            0
+                        )
                     st.success(f"✅ P&L recorded: {book_name_pnl} on {event_date_pnl}")
                     st.rerun()
     
@@ -678,7 +687,7 @@ elif page == "📝 Enter Bets":
                         pnl = -amount_risked
                         st.error(f"❌ **Loss: ${pnl:.2f}**")
             
-            submitted_bet = st.form_submit_button("📤 Submit Bet", use_container_width=True)
+            submitted_bet = st.form_submit_button("📤 Submit Bet", width='stretch')
             
             if submitted_bet:
                 if not book_name_bet.strip():
@@ -716,7 +725,7 @@ elif page == "📝 Enter Bets":
             display_trans['event_date'] = display_trans['event_date'].dt.strftime('%Y-%m-%d')
             display_trans = display_trans[['event_date', 'book', 'total_risked', 'total_won', 'net_profit']].head(5)
             display_trans.columns = ['Date', 'Book', 'Risked', 'Won', 'P&L']
-            st.dataframe(display_trans, use_container_width=True, hide_index=True)
+            st.dataframe(display_trans, width='stretch', hide_index=True)
         else:
             st.info("No transactions yet.")
     
@@ -728,7 +737,7 @@ elif page == "📝 Enter Bets":
             display_bets['event_date'] = display_bets['event_date'].dt.strftime('%Y-%m-%d')
             display_bets = display_bets[['event_date', 'book', 'description', 'amount_risked', 'status']].head(5)
             display_bets.columns = ['Date', 'Book', 'Description', 'Risked', 'Status']
-            st.dataframe(display_bets, use_container_width=True, hide_index=True)
+            st.dataframe(display_bets, width='stretch', hide_index=True)
         else:
             st.info("No bets yet.")
 
@@ -737,156 +746,104 @@ elif page == "📋 Ledger":
     # PAGE 3: DATA MANAGEMENT
     # ====================================================================
     
-    st.header("📋 Ledger")
+    st.header("📋 Data")
     
-    ledger_tab1, ledger_tab2 = st.tabs(["Transactions", "Individual Bets"])
+    col_trans, col_bets = st.columns(2)
     
-    with ledger_tab1:
-        st.subheader("Transaction Ledger")
-        st.write("Manage your daily book P&L records.")
+    # ====================================================================
+    # Transactions Table with Edit/Delete
+    # ====================================================================
+    with col_trans:
+        st.subheader("Transactions")
         
         df_trans = get_all_transactions()
         
         if not df_trans.empty:
-            # Edit section
-            st.write("**Edit Transactions**")
+            # Format for display
+            display_trans = df_trans.copy()
+            display_trans['event_date'] = display_trans['event_date'].dt.strftime('%Y-%m-%d')
+            display_trans = display_trans[['event_date', 'book', 'total_risked', 'total_won', 'net_profit']]
+            display_trans.columns = ['Date', 'Book', 'Risked', 'Won', 'P&L']
             
-            edit_df = df_trans.copy()
-            edit_df['event_date'] = edit_df['event_date'].dt.strftime('%Y-%m-%d')
-            edit_df = edit_df[['event_date', 'book', 'total_risked', 'total_won', 'net_profit']]
-            edit_df.columns = ['Date', 'Book', 'Risked ($)', 'Won ($)', 'Net Profit ($)']
-            
-            edited_df = st.data_editor(
-                edit_df,
-                use_container_width=True,
+            # Editable table
+            edited_trans = st.data_editor(
+                display_trans,
+                width='stretch',
                 hide_index=True,
-                num_rows="fixed"
+                key="trans_editor",
+                num_rows="dynamic"
             )
             
-            if st.button("💾 Sync Changes", use_container_width=True, key="trans_sync"):
-                try:
-                    conn = get_db_connection()
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM transactions")
-                    
-                    for idx, row in edited_df.iterrows():
-                        cursor.execute("""
-                            INSERT INTO transactions (event_date, book, total_risked, total_won, last_updated)
-                            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-                        """, (row['Date'], row['Book'], row['Risked ($)'], row['Won ($)']))
-                        
-                        conn.commit()
-                    
-                    conn.close()
-                    st.success("✅ Changes saved!")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"❌ Error: {e}")
+            # Find deleted rows and delete them
+            if len(edited_trans) < len(display_trans):
+                deleted_rows = set(range(len(display_trans))) - set(edited_trans.index if hasattr(edited_trans, 'index') else range(len(edited_trans)))
+                for idx in deleted_rows:
+                    if idx < len(display_trans):
+                        row = display_trans.iloc[idx]
+                        delete_transaction(row['Date'], row['Book'])
+                st.success("✅ Row deleted!")
+                st.rerun()
             
-            st.divider()
-            
-            # Delete section
-            st.write("**Delete Transactions**")
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                selected_date = st.selectbox(
-                    "Select Date",
-                    options=sorted(edit_df['Date'].unique(), reverse=True),
-                    key="trans_delete_date"
-                )
-            
-            with col2:
-                books_for_date = edited_df[edited_df['Date'] == selected_date]['Book'].unique().tolist()
-                selected_book = st.selectbox(
-                    "Select Book",
-                    options=books_for_date,
-                    key="trans_delete_book"
-                )
-            
-            with col3:
-                if st.button("🗑️ Delete", use_container_width=True, type="secondary", key="trans_delete_btn"):
-                    delete_transaction(selected_date, selected_book)
-                    st.success("✅ Deleted!")
-                    st.rerun()
-        
+            # Handle edits - compare with original
+            if not edited_trans.equals(display_trans):
+                for idx, row in edited_trans.iterrows():
+                    if idx < len(display_trans):
+                        orig = display_trans.iloc[idx]
+                        if not row.equals(orig):
+                            update_transaction(row['Date'], row['Book'], row['Risked'], row['Won'])
+                st.success("✅ Changes saved!")
+                st.rerun()
         else:
-            st.info("No transactions yet.")
+            st.info("No transactions yet")
     
-    with ledger_tab2:
-        st.subheader("Individual Bets Ledger")
-        st.write("Manage your individual bet records.")
+    # ====================================================================
+    # Individual Bets Table with Edit/Delete
+    # ====================================================================
+    with col_bets:
+        st.subheader("Individual Bets")
         
         df_bets = get_all_bets()
         
         if not df_bets.empty:
-            # Display all bets
+            # Format for display
             display_bets = df_bets.copy()
             display_bets['event_date'] = display_bets['event_date'].dt.strftime('%Y-%m-%d')
-            display_bets = display_bets[['id', 'event_date', 'book', 'description', 'amount_risked', 'american_odds', 'status', 'pnl']]
-            display_bets.columns = ['ID', 'Date', 'Book', 'Description', 'Risked ($)', 'Odds', 'Status', 'P&L ($)']
+            display_bets = display_bets[['id', 'event_date', 'book', 'amount_risked', 'american_odds', 'status']]
+            display_bets.columns = ['ID', 'Date', 'Book', 'Risked', 'Odds', 'Status']
             
-            st.dataframe(display_bets, use_container_width=True, hide_index=True)
+            # Editable table
+            edited_bets = st.data_editor(
+                display_bets,
+                width='stretch',
+                hide_index=True,
+                key="bets_editor",
+                num_rows="dynamic"
+            )
             
-            st.divider()
+            # Find deleted rows and delete them
+            if len(edited_bets) < len(display_bets):
+                deleted_rows = set(range(len(display_bets))) - set(edited_bets.index if hasattr(edited_bets, 'index') else range(len(edited_bets)))
+                for idx in deleted_rows:
+                    if idx < len(display_bets):
+                        row = display_bets.iloc[idx]
+                        delete_bet(int(row['ID']))
+                st.success("✅ Row deleted!")
+                st.rerun()
             
-            # Update bet status
-            st.write("**Update Bet Status**")
+            # Handle edits
+            for idx, row in edited_bets.iterrows():
+                if idx < len(display_bets):
+                    orig = display_bets.iloc[idx]
+                    if not row.equals(orig):
+                        # Recalculate P&L if status changed
+                        pnl_value = None
+                        if row['Status'] != "open":
+                            pnl_value = calculate_pnl_from_odds(row['Risked'], row['Odds'], row['Status'] == "won")
+                        
+                        update_bet(int(row['ID']), row['Status'], pnl_value)
             
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                bet_to_update = st.selectbox(
-                    "Select Bet",
-                    options=df_bets['id'].tolist(),
-                    format_func=lambda x: f"ID {x}: {df_bets[df_bets['id']==x]['description'].values[0] or 'No description'}",
-                    key="bet_update_select"
-                )
-            
-            with col2:
-                new_status = st.selectbox(
-                    "New Status",
-                    ["open", "won", "lost"],
-                    key="bet_update_status"
-                )
-            
-            with col3:
-                if st.button("✏️ Update", use_container_width=True, key="bet_update_btn"):
-                    selected_bet = df_bets[df_bets['id'] == bet_to_update].iloc[0]
-                    
-                    pnl_value = None
-                    if new_status != "open":
-                        pnl_value = calculate_pnl_from_odds(
-                            selected_bet['amount_risked'],
-                            selected_bet['american_odds'],
-                            new_status == "won"
-                        )
-                    
-                    update_bet(bet_to_update, new_status, pnl_value)
-                    st.success("✅ Bet updated!")
-                    st.rerun()
-            
-            st.divider()
-            
-            # Delete bet
-            st.write("**Delete Bet**")
-            
-            col1, col2 = st.columns([3, 1])
-            
-            with col1:
-                bet_to_delete = st.selectbox(
-                    "Select Bet to Delete",
-                    options=df_bets['id'].tolist(),
-                    format_func=lambda x: f"ID {x}: {df_bets[df_bets['id']==x]['description'].values[0] or 'No description'}",
-                    key="bet_delete_select"
-                )
-            
-            with col2:
-                if st.button("🗑️ Delete", use_container_width=True, type="secondary", key="bet_delete_btn"):
-                    delete_bet(bet_to_delete)
-                    st.success("✅ Deleted!")
-                    st.rerun()
-        
+            if not edited_bets.equals(display_bets):
+                st.success("✅ Changes saved!")
+                st.rerun()
         else:
-            st.info("No individual bets yet.")
+            st.info("No bets yet")
