@@ -79,10 +79,9 @@ else:
 st.title("💰 Bet Management")
 
 def kpi_pill(label, amount):
-    # Darker text for readability on light backgrounds
-    text_color = "#1e4620" if amount >= 0 else "#5f2120" 
-    # Soft light backgrounds
-    bg_color = "#e8f5e9" if amount >= 0 else "#fdecea" 
+    # Bold solid colors: Emerald Green and Crimson Red
+    bg_color = "#2e7d32" if amount >= 0 else "#d32f2f" 
+    text_color = "#ffffff" # Pure white text for high contrast
     prefix = "+" if amount >= 0 else ""
     
     st.markdown(f"""
@@ -92,12 +91,12 @@ def kpi_pill(label, amount):
                 display: inline-block;
                 background-color: {bg_color};
                 color: {text_color};
-                padding: 6px 16px;
-                border-radius: 20px;
+                padding: 6px 18px;
+                border-radius: 12px;
                 font-weight: 700;
-                font-size: 1.4rem;
+                font-size: 1.5rem;
                 margin-top: 6px;
-                border: 1px solid {text_color}22;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1);
             ">
                 {prefix}${amount:,.2f}
             </div>
