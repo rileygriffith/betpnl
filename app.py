@@ -65,6 +65,7 @@ st.divider()
 # --- TABS ---
 tab_bet, tab_bulk, tab_pending = st.tabs(["🎯 Single Bet", "📊 Bulk PnL", "⏳ Pending Sweats"])
 
+# TAB 1: SINGLE BET
 with tab_bet:
     with st.container(border=True):
         col1, col2 = st.columns(2)
@@ -82,22 +83,16 @@ with tab_bet:
         if btn_col1.button("✅ Win", use_container_width=True, type="primary"):
             if b_risk and b_odds and b_book:
                 p = calc_pnl(b_risk, b_odds)
-                mask = (df_ledger['event_date'] == pd.Timestamp(b_date)) & (df_ledger['book'] == b_book)
-                if mask.any(): df_ledger.loc[mask, 'total_won'] += p
-                else:
-                    new_row = pd.DataFrame([{"event_date": date_str, "book": b_book, "timeframe_type": "daily", "total_won": p, "last_updated": update_time}])
-                    df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
+                new_row = pd.DataFrame([{"event_date": date_str, "book": b_book, "timeframe_type": "daily", "total_won": p, "last_updated": update_time}])
+                df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
                 df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date']).dt.strftime('%Y-%m-%d')
                 conn.update(worksheet="transactions", data=df_ledger)
                 st.rerun()
 
         if btn_col2.button("❌ Loss", use_container_width=True):
             if b_risk and b_book:
-                mask = (df_ledger['event_date'] == pd.Timestamp(b_date)) & (df_ledger['book'] == b_book)
-                if mask.any(): df_ledger.loc[mask, 'total_won'] -= b_risk
-                else:
-                    new_row = pd.DataFrame([{"event_date": date_str, "book": b_book, "timeframe_type": "daily", "total_won": -b_risk, "last_updated": update_time}])
-                    df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
+                new_row = pd.DataFrame([{"event_date": date_str, "book": b_book, "timeframe_type": "daily", "total_won": -b_risk, "last_updated": update_time}])
+                df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
                 df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date']).dt.strftime('%Y-%m-%d')
                 conn.update(worksheet="transactions", data=df_ledger)
                 st.rerun()
@@ -110,37 +105,55 @@ with tab_bet:
                 conn.update(worksheet="pending", data=df_pending)
                 st.rerun()
 
+# TAB 2: BULK PNL
+with tab_bulk:
+    with st.form("bulk_form", clear_on_submit=True):
+        st.subheader("Manual PnL Entry")
+        col1, col2 = st.columns(2)
+        with col1:
+            p_date = st.date_input("Date", datetime.now(), key="p_date")
+            p_timeframe = st.selectbox("Type", ["daily", "monthly", "yearly", "other"], key="p_type")
+        with col2:
+            p_book = st.selectbox("Source", options=existing_books, key="p_book_select", index=None, accept_new_options=True)
+            p_pnl = st.number_input("Net PnL ($)", step=0.01, key="p_pnl", value=None)
+        
+        if st.form_submit_button("Log Bulk PnL"):
+            if p_pnl is not None and p_book:
+                new_row = pd.DataFrame([{
+                    "event_date": p_date.strftime('%Y-%m-%d'), 
+                    "book": p_book, 
+                    "timeframe_type": p_timeframe, 
+                    "total_risked": 0.0, 
+                    "total_won": p_pnl, 
+                    "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                }])
+                df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
+                df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date']).dt.strftime('%Y-%m-%d')
+                conn.update(worksheet="transactions", data=df_ledger)
+                st.rerun()
+
+# TAB 3: PENDING RESOLVE
 with tab_pending:
     if not df_pending.empty:
         st.subheader("Resolve a Sweat")
-        # Let user pick which bet to resolve
         df_pending['display_name'] = df_pending['book'] + " ($" + df_pending['amount_risked'].astype(str) + " on " + df_pending['event_date'].astype(str) + ")"
-        bet_to_resolve = st.selectbox("Select Bet to Resolve", options=df_pending.index, format_func=lambda x: df_pending.loc[x, 'display_name'])
+        bet_to_resolve = st.selectbox("Select Bet", options=df_pending.index, format_func=lambda x: df_pending.loc[x, 'display_name'])
         
-        res_col1, res_col2, res_col3 = st.columns(3)
+        res_col1, res_col2 = st.columns(2)
         selected_bet = df_pending.loc[bet_to_resolve]
 
         if res_col1.button("🏆 Resolve as WIN", use_container_width=True, type="primary"):
-            # 1. Add to Ledger
-            mask = (df_ledger['event_date'] == pd.Timestamp(selected_bet['event_date'])) & (df_ledger['book'] == selected_bet['book'])
-            if mask.any(): df_ledger.loc[mask, 'total_won'] += selected_bet['potential_pnl']
-            else:
-                new_row = pd.DataFrame([{"event_date": selected_bet['event_date'], "book": selected_bet['book'], "timeframe_type": "daily", "total_won": selected_bet['potential_pnl'], "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
-                df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
-            # 2. Remove from Pending
+            new_row = pd.DataFrame([{"event_date": selected_bet['event_date'], "book": selected_bet['book'], "timeframe_type": "daily", "total_won": selected_bet['potential_pnl'], "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
+            df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
             df_pending = df_pending.drop(bet_to_resolve).drop(columns=['display_name'])
-            # 3. Update Sheets
             df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date']).dt.strftime('%Y-%m-%d')
             conn.update(worksheet="transactions", data=df_ledger)
             conn.update(worksheet="pending", data=df_pending)
             st.rerun()
 
         if res_col2.button("💀 Resolve as LOSS", use_container_width=True):
-            mask = (df_ledger['event_date'] == pd.Timestamp(selected_bet['event_date'])) & (df_ledger['book'] == selected_bet['book'])
-            if mask.any(): df_ledger.loc[mask, 'total_won'] -= selected_bet['amount_risked']
-            else:
-                new_row = pd.DataFrame([{"event_date": selected_bet['event_date'], "book": selected_bet['book'], "timeframe_type": "daily", "total_won": -selected_bet['amount_risked'], "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
-                df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
+            new_row = pd.DataFrame([{"event_date": selected_bet['event_date'], "book": selected_bet['book'], "timeframe_type": "daily", "total_won": -selected_bet['amount_risked'], "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
+            df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
             df_pending = df_pending.drop(bet_to_resolve).drop(columns=['display_name'])
             df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date']).dt.strftime('%Y-%m-%d')
             conn.update(worksheet="transactions", data=df_ledger)
@@ -152,7 +165,8 @@ with tab_pending:
     else:
         st.info("No active sweats.")
 
-# --- DATA MGMT (Same as before) ---
+# DATA MANAGEMENT
+st.divider()
 with st.expander("⚙️ Bulk Edit Ledger"):
     if not df_ledger.empty:
         df_edit = df_ledger.copy()
