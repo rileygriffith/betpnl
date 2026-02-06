@@ -21,18 +21,18 @@ def calc_pnl(risk, odds):
 df_ledger = conn.read(worksheet="transactions", ttl=0).dropna(how="all")
 df_pending = conn.read(worksheet="pending", ttl=0).dropna(how="all")
 
-# Ensure date column is datetime and sorted for the chart
+# Pre-processing for Dropdowns & Charts
 df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date'])
-df_ledger = df_ledger.sort_values('event_date', ascending=False)
+
+# Get unique list of sportsbooks for the dropdowns
+existing_books = sorted(df_ledger['book'].unique().tolist()) if not df_ledger.empty else []
 
 # --- MONTHLY CALCULATIONS ---
 now = datetime.now()
 df_month = df_ledger[(df_ledger['event_date'].dt.month == now.month) & 
                      (df_ledger['event_date'].dt.year == now.year)].copy()
 
-# Prepare Chart Data
-daily_totals = df_month.groupby('event_date')['total_won'].sum().reset_index()
-daily_totals = daily_totals.sort_values('event_date')
+daily_totals = df_month.groupby('event_date')['total_won'].sum().reset_index().sort_values('event_date')
 daily_totals['cumulative_pnl'] = daily_totals['total_won'].cumsum()
 
 monthly_pnl = df_month['total_won'].sum()
@@ -42,8 +42,7 @@ pnl_color = "green" if monthly_pnl >= 0 else "red"
 st.title("💰 Bet Management")
 c1, c2 = st.columns(2)
 c1.metric("All-Time PnL", f"${df_ledger['total_won'].sum():,.2f}")
-c2.metric(f"{now.strftime('%B')} Cumulative PnL", f"${monthly_pnl:,.2f}", 
-          delta=f"{monthly_pnl:,.2f}")
+c2.metric(f"{now.strftime('%B')} Cumulative PnL", f"${monthly_pnl:,.2f}", delta=f"{monthly_pnl:,.2f}")
 
 st.divider()
 
@@ -67,10 +66,13 @@ with tab_bet:
         col1, col2 = st.columns(2)
         with col1:
             b_date = st.date_input("Date", datetime.now(), key="b_date")
-            b_book = st.text_input("Sportsbook", key="b_book")
+            # HYBRID DROPDOWN: Pick existing or type new
+            b_book = st.selectbox("Sportsbook", options=existing_books, key="b_book_select", 
+                                  placeholder="Select or type a new book...", 
+                                  index=None, accept_new_options=True)
         with col2:
             b_risk = st.number_input("Risked ($)", min_value=0.0, step=1.0, key="b_risk", value=None)
-            b_odds = st.number_input("American Odds", step=1, key="b_odds", value=None)
+            b_odds = st.number_input("American Odds", step=1, key="b_odds", value=None, placeholder="-110")
         
         potential = calc_pnl(b_risk, b_odds)
         btn_col1, btn_col2, btn_col3 = st.columns(3)
@@ -113,10 +115,12 @@ with tab_bulk:
             p_date = st.date_input("Date", datetime.now(), key="p_date")
             p_timeframe = st.selectbox("Type", ["daily", "monthly", "yearly"])
         with col2:
-            p_book = st.text_input("Source", key="p_book")
+            # Same hybrid logic for bulk entry
+            p_book = st.selectbox("Source", options=existing_books, key="p_book_select", 
+                                  index=None, accept_new_options=True)
             p_pnl = st.number_input("Net PnL ($)", step=0.01, key="p_pnl", value=None)
         if st.form_submit_button("Log Bulk PnL"):
-            if p_pnl is not None:
+            if p_pnl is not None and p_book:
                 new_row = pd.DataFrame([{"event_date": p_date.strftime('%Y-%m-%d'), "book": p_book, "timeframe_type": p_timeframe, "total_risked": 0.0, "total_won": p_pnl, "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
                 df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
                 conn.update(worksheet="transactions", data=df_ledger)
@@ -124,7 +128,7 @@ with tab_bulk:
 
 with tab_pending:
     if not df_pending.empty:
-        st.data_editor(df_pending, use_container_width=True, hide_index=True, key="pending_editor")
+        st.data_editor(df_pending, use_container_width=True, hide_index=True)
         if st.button("Clear All Pending"):
             conn.update(worksheet="pending", data=pd.DataFrame(columns=df_pending.columns))
             st.rerun()
@@ -133,19 +137,14 @@ with tab_pending:
 st.divider()
 st.subheader("⚙️ Data Management")
 with st.expander("Edit or Delete Ledger Entries"):
-    # Convert date back to string for the editor to avoid timezone issues
-    df_ledger['event_date'] = df_ledger['event_date'].dt.strftime('%Y-%m-%d')
+    # Sort history newest first for the editor
+    df_ledger_display = df_ledger.copy()
+    df_ledger_display['event_date'] = df_ledger_display['event_date'].dt.strftime('%Y-%m-%d')
+    df_ledger_display = df_ledger_display.sort_values('event_date', ascending=False)
     
-    # The Editor
-    edited_df = st.data_editor(
-        df_ledger, 
-        use_container_width=True, 
-        num_rows="dynamic", # Allows you to add/delete rows
-        column_order=("event_date", "book", "timeframe_type", "total_won", "last_updated"),
-        key="ledger_editor"
-    )
+    edited_df = st.data_editor(df_ledger_display, use_container_width=True, num_rows="dynamic", key="ledger_editor")
     
     if st.button("💾 Save Changes to Ledger"):
         conn.update(worksheet="transactions", data=edited_df)
-        st.success("Google Sheets updated successfully!")
+        st.success("Google Sheets updated!")
         st.rerun()
