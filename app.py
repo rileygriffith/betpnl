@@ -91,12 +91,32 @@ else:
 # --- UI DISPLAY ---
 st.title("💰 Bet Management")
 
-# Metric Row
-c1, c2 = st.columns(2)
-c1.metric("All-Time PnL", f"${all_time_pnl:,.2f}")
-c2.metric(f"{now_local.strftime('%B')} PnL", f"${monthly_pnl:,.2f}")
+# 1. Prepare formatting for metrics (Green/Red and +/- signs)
+all_time_prefix = "+" if all_time_pnl > 0 else ""
+monthly_prefix = "+" if monthly_pnl > 0 else ""
 
-# Cumulative PnL Line Chart
+# Determine colors: 'normal' is green, 'inverse' is red
+all_time_color = "normal" if all_time_pnl >= 0 else "inverse"
+monthly_color = "normal" if monthly_pnl >= 0 else "inverse"
+
+# 2. Metric Row
+c1, c2 = st.columns(2)
+
+c1.metric(
+    label="All-Time PnL", 
+    value=f"{all_time_prefix}${all_time_pnl:,.2f}",
+    delta=f"{all_time_prefix}${all_time_pnl:,.2f}" if all_time_pnl != 0 else None,
+    delta_color=all_time_color
+)
+
+c2.metric(
+    label=f"{now_local.strftime('%B')} PnL", 
+    value=f"{monthly_prefix}${monthly_pnl:,.2f}",
+    delta=f"{monthly_prefix}${monthly_pnl:,.2f}" if monthly_pnl != 0 else None,
+    delta_color=monthly_color
+)
+
+# 3. Cumulative PnL Line Chart
 if not daily_totals.empty:
     pnl_color = "green" if monthly_pnl >= 0 else "red"
     line = alt.Chart(daily_totals).mark_line(point=True, color=pnl_color).encode(
