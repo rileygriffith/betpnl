@@ -17,29 +17,28 @@ def calc_pnl(risk, odds):
         return risk * (100 / abs(odds))
     return 0.0
 
-# Load Data
+# --- LOAD DATA ---
 df_ledger = conn.read(worksheet="transactions", ttl=0).dropna(how="all")
 df_pending = conn.read(worksheet="pending", ttl=0).dropna(how="all")
 
-# Ensure date column is datetime
+# Ensure date column is datetime and sorted for the chart
 df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date'])
+df_ledger = df_ledger.sort_values('event_date', ascending=False)
 
 # --- MONTHLY CALCULATIONS ---
 now = datetime.now()
 df_month = df_ledger[(df_ledger['event_date'].dt.month == now.month) & 
                      (df_ledger['event_date'].dt.year == now.year)].copy()
 
-# 1. Group by date to get daily totals
+# Prepare Chart Data
 daily_totals = df_month.groupby('event_date')['total_won'].sum().reset_index()
 daily_totals = daily_totals.sort_values('event_date')
-
-# 2. CALCULATE CUMULATIVE PNL
 daily_totals['cumulative_pnl'] = daily_totals['total_won'].cumsum()
 
 monthly_pnl = df_month['total_won'].sum()
 pnl_color = "green" if monthly_pnl >= 0 else "red"
 
-# --- HEADER ---
+# --- HEADER METRICS ---
 st.title("💰 Bet Management")
 c1, c2 = st.columns(2)
 c1.metric("All-Time PnL", f"${df_ledger['total_won'].sum():,.2f}")
@@ -50,43 +49,28 @@ st.divider()
 
 # --- CUMULATIVE CHART ---
 if not daily_totals.empty:
-    st.subheader(f"Performance: {now.strftime('%B %Y')}")
-    
-    # Base Line Chart
-    line = alt.Chart(daily_totals).mark_line(
-        point=True, 
-        color=pnl_color,
-        strokeWidth=3,
-        interpolate='monotone' # Makes the line slightly curved/smooth
-    ).encode(
-        x=alt.X('event_date:T', title='Date', axis=alt.Axis(format='%b %d')),
+    line = alt.Chart(daily_totals).mark_line(point=True, color=pnl_color, strokeWidth=3, interpolate='monotone').encode(
+        x=alt.X('event_date:T', title='Date'),
         y=alt.Y('cumulative_pnl:Q', title='Cumulative PnL ($)'),
-        tooltip=[alt.Tooltip('event_date:T', title='Date'), 
-                 alt.Tooltip('cumulative_pnl:Q', title='Running Total', format='$.2f')]
+        tooltip=[alt.Tooltip('event_date:T', title='Date'), alt.Tooltip('cumulative_pnl:Q', format='$.2f')]
     )
-
-    # Horizontal line at 0
     rule = alt.Chart(pd.DataFrame({'y': [0]})).mark_rule(color='white', strokeDash=[5, 5]).encode(y='y')
-
     st.altair_chart(line + rule, use_container_width=True)
-else:
-    st.info("No data for the current month yet.")
 
 st.divider()
 
 # --- ENTRY TABS ---
-tab_bet, tab_bulk, tab_pending = st.tabs(["🎯 Single Bet", "📊 Bulk/Manual PnL", "⏳ Pending Sweats"])
+tab_bet, tab_bulk, tab_pending = st.tabs(["🎯 Single Bet", "📊 Bulk PnL", "⏳ Pending Sweats"])
 
-# --- TAB 1: SINGLE BET ENTRY ---
 with tab_bet:
     with st.container(border=True):
         col1, col2 = st.columns(2)
         with col1:
             b_date = st.date_input("Date", datetime.now(), key="b_date")
-            b_book = st.text_input("Sportsbook", key="b_book", placeholder="DraftKings...")
+            b_book = st.text_input("Sportsbook", key="b_book")
         with col2:
             b_risk = st.number_input("Risked ($)", min_value=0.0, step=1.0, key="b_risk", value=None)
-            b_odds = st.number_input("American Odds", step=1, key="b_odds", value=None, placeholder="-110")
+            b_odds = st.number_input("American Odds", step=1, key="b_odds", value=None)
         
         potential = calc_pnl(b_risk, b_odds)
         btn_col1, btn_col2, btn_col3 = st.columns(3)
@@ -96,8 +80,7 @@ with tab_bet:
             if st.button("✅ Win", use_container_width=True, type="primary"):
                 if b_risk and b_odds and b_book:
                     mask = (df_ledger['event_date'] == pd.Timestamp(b_date)) & (df_ledger['book'] == b_book)
-                    if mask.any():
-                        df_ledger.loc[mask, 'total_won'] += potential
+                    if mask.any(): df_ledger.loc[mask, 'total_won'] += potential
                     else:
                         new_row = pd.DataFrame([{"event_date": date_str, "book": b_book, "timeframe_type": "daily", "total_risked": 0.0, "total_won": potential, "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
                         df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
@@ -108,8 +91,7 @@ with tab_bet:
             if st.button("❌ Loss", use_container_width=True):
                 if b_risk and b_book:
                     mask = (df_ledger['event_date'] == pd.Timestamp(b_date)) & (df_ledger['book'] == b_book)
-                    if mask.any():
-                        df_ledger.loc[mask, 'total_won'] -= b_risk
+                    if mask.any(): df_ledger.loc[mask, 'total_won'] -= b_risk
                     else:
                         new_row = pd.DataFrame([{"event_date": date_str, "book": b_book, "timeframe_type": "daily", "total_risked": 0.0, "total_won": -b_risk, "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
                         df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
@@ -124,30 +106,46 @@ with tab_bet:
                     conn.update(worksheet="pending", data=df_pending)
                     st.rerun()
 
-# --- TAB 2: BULK ENTRY ---
 with tab_bulk:
     with st.form("bulk_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
         with col1:
             p_date = st.date_input("Date", datetime.now(), key="p_date")
-            p_timeframe = st.selectbox("Timeframe", ["daily", "monthly", "yearly"])
+            p_timeframe = st.selectbox("Type", ["daily", "monthly", "yearly"])
         with col2:
-            p_book = st.text_input("Sportsbook/Source", key="p_book")
+            p_book = st.text_input("Source", key="p_book")
             p_pnl = st.number_input("Net PnL ($)", step=0.01, key="p_pnl", value=None)
         if st.form_submit_button("Log Bulk PnL"):
             if p_pnl is not None:
-                date_str = p_date.strftime('%Y-%m-%d')
-                new_row = pd.DataFrame([{"event_date": date_str, "book": p_book, "timeframe_type": p_timeframe, "total_risked": 0.0, "total_won": p_pnl, "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
+                new_row = pd.DataFrame([{"event_date": p_date.strftime('%Y-%m-%d'), "book": p_book, "timeframe_type": p_timeframe, "total_risked": 0.0, "total_won": p_pnl, "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
                 df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
                 conn.update(worksheet="transactions", data=df_ledger)
                 st.rerun()
 
-# --- TAB 3: PENDING VIEW ---
 with tab_pending:
     if not df_pending.empty:
-        st.dataframe(df_pending, use_container_width=True, hide_index=True)
+        st.data_editor(df_pending, use_container_width=True, hide_index=True, key="pending_editor")
         if st.button("Clear All Pending"):
             conn.update(worksheet="pending", data=pd.DataFrame(columns=df_pending.columns))
             st.rerun()
-    else:
-        st.info("No active sweats.")
+
+# --- DATA MANAGEMENT PANEL ---
+st.divider()
+st.subheader("⚙️ Data Management")
+with st.expander("Edit or Delete Ledger Entries"):
+    # Convert date back to string for the editor to avoid timezone issues
+    df_ledger['event_date'] = df_ledger['event_date'].dt.strftime('%Y-%m-%d')
+    
+    # The Editor
+    edited_df = st.data_editor(
+        df_ledger, 
+        use_container_width=True, 
+        num_rows="dynamic", # Allows you to add/delete rows
+        column_order=("event_date", "book", "timeframe_type", "total_won", "last_updated"),
+        key="ledger_editor"
+    )
+    
+    if st.button("💾 Save Changes to Ledger"):
+        conn.update(worksheet="transactions", data=edited_df)
+        st.success("Google Sheets updated successfully!")
+        st.rerun()
