@@ -50,7 +50,7 @@ st.divider()
 
 # --- CUMULATIVE CHART ---
 if not daily_totals.empty:
-    st.subheader(f"MTD Profit Trajectory: {now.strftime('%B %Y')}")
+    st.subheader(f"Performance: {now.strftime('%B %Y')}")
     
     # Base Line Chart
     line = alt.Chart(daily_totals).mark_line(
