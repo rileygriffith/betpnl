@@ -75,26 +75,29 @@ if not df_ledger.empty:
 else:
     daily_totals, monthly_pnl, all_time_pnl = pd.DataFrame(), 0.0, 0.0
 
-# --- UI DISPLAY: KPI PILLS ---
+# --- UI DISPLAY: CORRECTED KPI PILLS ---
 st.title("💰 Bet Management")
 
 def kpi_pill(label, amount):
-    color = "#2e7d32" if amount >= 0 else "#d32f2f" # Dark Green / Dark Red
-    bg_color = "#e8f5e9" if amount >= 0 else "#ffebee" # Light Green / Light Red
+    # Darker text for readability on light backgrounds
+    text_color = "#1e4620" if amount >= 0 else "#5f2120" 
+    # Soft light backgrounds
+    bg_color = "#e8f5e9" if amount >= 0 else "#fdecea" 
     prefix = "+" if amount >= 0 else ""
     
     st.markdown(f"""
         <div style="margin-bottom: 20px;">
-            <p style="margin: 0; font-size: 0.9rem; color: #808495;">{label}</p>
+            <p style="margin: 0; font-size: 0.9rem; color: #808495; font-weight: 500;">{label}</p>
             <div style="
                 display: inline-block;
                 background-color: {bg_color};
-                color: {color};
-                padding: 4px 12px;
-                border-radius: 16px;
-                font-weight: bold;
-                font-size: 1.2rem;
-                margin-top: 4px;
+                color: {text_color};
+                padding: 6px 16px;
+                border-radius: 20px;
+                font-weight: 700;
+                font-size: 1.4rem;
+                margin-top: 6px;
+                border: 1px solid {text_color}22;
             ">
                 {prefix}${amount:,.2f}
             </div>
@@ -109,7 +112,7 @@ with col_kpi2:
 
 # Cumulative Chart
 if not daily_totals.empty:
-    pnl_color = "green" if monthly_pnl >= 0 else "red"
+    pnl_color = "#2e7d32" if monthly_pnl >= 0 else "#d32f2f"
     line = alt.Chart(daily_totals).mark_line(point=True, color=pnl_color).encode(
         x=alt.X('event_date:T', title='Date'),
         y=alt.Y('cumulative_pnl:Q', title='Cumulative PnL ($)'),
@@ -139,6 +142,7 @@ if st.session_state.staged_bets:
 st.divider()
 tab_bet, tab_bulk, tab_pending = st.tabs(["🎯 Single Bet", "📊 Bulk PnL", "⏳ Pending Sweats"])
 
+# (Rest of TAB logic remains the same...)
 # TAB 1: SINGLE BET
 with tab_bet:
     with st.form("single_bet_form", border=True):
