@@ -3,16 +3,21 @@ from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import altair as alt
 from datetime import datetime, timedelta
+import pytz
 
 # --- CONFIG ---
 st.set_page_config(page_title="Bet Tracker", layout="wide")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
-# --- SESSION STATE FOR STICKY DATE ---
-# Default to yesterday on first load
+# --- TIMEZONE STANDARDIZATION (EST) ---
+local_tz = pytz.timezone("America/New_York")
+now_local = datetime.now(local_tz)
+yesterday_local = (now_local - timedelta(days=1)).date()
+
+# Initialize sticky date to local yesterday
 if "sticky_date" not in st.session_state:
-    st.session_state.sticky_date = datetime.now().date() - timedelta(days=1)
+    st.session_state.sticky_date = yesterday_local
 
 def calc_pnl(risk, odds):
     if risk is None or odds is None: return 0.0
@@ -30,11 +35,10 @@ except Exception:
     df_ledger = pd.DataFrame(columns=["event_date", "book", "timeframe_type", "total_won", "last_updated"])
     df_pending = pd.DataFrame(columns=["event_date", "book", "amount_risked", "odds", "potential_pnl", "status"])
 
-# --- DATA CLEANING (PREVENTS VALUEERROR) ---
+# --- DATA CLEANING ---
 df_ledger = df_ledger.dropna(subset=['event_date', 'book'], how='all')
 
 if not df_ledger.empty:
-    # Use 'mixed' to handle various date/time string formats safely
     df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date'], errors='coerce', format='mixed')
     df_ledger = df_ledger.dropna(subset=['event_date'])
     df_ledger['total_won'] = pd.to_numeric(df_ledger['total_won'], errors='coerce').fillna(0.0)
@@ -43,8 +47,7 @@ if not df_ledger.empty:
 existing_books = sorted(df_ledger['book'].unique().tolist()) if not df_ledger.empty else []
 
 # --- CALCULATIONS ---
-now = datetime.now()
-df_month = df_ledger[(df_ledger['event_date'].dt.month == now.month) & (df_ledger['event_date'].dt.year == now.year)].copy()
+df_month = df_ledger[(df_ledger['event_date'].dt.month == now_local.month) & (df_ledger['event_date'].dt.year == now_local.year)].copy()
 daily_totals = df_month.groupby('event_date')['total_won'].sum().reset_index().sort_values('event_date')
 daily_totals['cumulative_pnl'] = daily_totals['total_won'].cumsum()
 monthly_pnl = df_month['total_won'].sum() if not df_month.empty else 0.0
@@ -54,7 +57,7 @@ pnl_color = "green" if monthly_pnl >= 0 else "red"
 st.title("💰 Bet Management")
 c1, c2 = st.columns(2)
 c1.metric("All-Time PnL", f"${df_ledger['total_won'].sum():,.2f}")
-c2.metric(f"{now.strftime('%B')} PnL", f"${monthly_pnl:,.2f}", delta=f"${monthly_pnl:,.2f}")
+c2.metric(f"{now_local.strftime('%B')} PnL", f"${monthly_pnl:,.2f}", delta=f"{monthly_pnl:,.2f}")
 
 st.divider()
 
@@ -69,17 +72,16 @@ if not daily_totals.empty:
 
 st.divider()
 
-# --- TABS ---
+# --- ENTRY TABS ---
 tab_bet, tab_bulk, tab_pending = st.tabs(["🎯 Single Bet", "📊 Bulk PnL", "⏳ Pending Sweats"])
 
-# TAB 1: SINGLE BET (With Sticky Date)
+# TAB 1: SINGLE BET
 with tab_bet:
     with st.container(border=True):
         col1, col2 = st.columns(2)
         with col1:
             b_date = st.date_input("Date", value=st.session_state.sticky_date, key="date_picker_main")
-            st.session_state.sticky_date = b_date # Update sticky date on change
-            
+            st.session_state.sticky_date = b_date 
             b_book = st.selectbox("Sportsbook", options=existing_books, key="b_book_select", index=None, accept_new_options=True)
         with col2:
             b_risk = st.number_input("Risked ($)", min_value=0.0, step=1.0, key="b_risk", value=None)
@@ -87,7 +89,7 @@ with tab_bet:
         
         btn_col1, btn_col2, btn_col3 = st.columns(3)
         date_str = b_date.strftime('%Y-%m-%d')
-        update_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        update_time = now_local.strftime("%Y-%m-%d %H:%M:%S")
 
         if btn_col1.button("✅ Win", width="stretch", type="primary"):
             if b_risk and b_odds and b_book:
@@ -129,13 +131,7 @@ with tab_bulk:
         if st.form_submit_button("Log Bulk PnL", width="stretch"):
             if p_pnl is not None and p_book:
                 st.session_state.sticky_date = p_date
-                new_row = pd.DataFrame([{
-                    "event_date": p_date.strftime('%Y-%m-%d'), 
-                    "book": p_book, 
-                    "timeframe_type": p_timeframe, 
-                    "total_won": p_pnl, 
-                    "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                }])
+                new_row = pd.DataFrame([{"event_date": p_date.strftime('%Y-%m-%d'), "book": p_book, "timeframe_type": p_timeframe, "total_won": p_pnl, "last_updated": now_local.strftime("%Y-%m-%d %H:%M:%S")}])
                 df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
                 df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date']).dt.strftime('%Y-%m-%d')
                 conn.update(worksheet="transactions", data=df_ledger)
@@ -152,7 +148,7 @@ with tab_pending:
         selected_bet = df_pending.loc[bet_to_resolve]
 
         if res_col1.button("🏆 Resolve as WIN", width="stretch", type="primary"):
-            new_row = pd.DataFrame([{"event_date": selected_bet['event_date'], "book": selected_bet['book'], "timeframe_type": "daily", "total_won": selected_bet['potential_pnl'], "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
+            new_row = pd.DataFrame([{"event_date": selected_bet['event_date'], "book": selected_bet['book'], "timeframe_type": "daily", "total_won": selected_bet['potential_pnl'], "last_updated": now_local.strftime("%Y-%m-%d %H:%M:%S")}])
             df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
             df_pending_new = df_pending.drop(bet_to_resolve).drop(columns=['display_name'])
             df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date']).dt.strftime('%Y-%m-%d')
@@ -161,7 +157,7 @@ with tab_pending:
             st.rerun()
 
         if res_col2.button("💀 Resolve as LOSS", width="stretch"):
-            new_row = pd.DataFrame([{"event_date": selected_bet['event_date'], "book": selected_bet['book'], "timeframe_type": "daily", "total_won": -selected_bet['amount_risked'], "last_updated": datetime.now().strftime("%Y-%m-%d %H:%M:%S")}])
+            new_row = pd.DataFrame([{"event_date": selected_bet['event_date'], "book": selected_bet['book'], "timeframe_type": "daily", "total_won": -selected_bet['amount_risked'], "last_updated": now_local.strftime("%Y-%m-%d %H:%M:%S")}])
             df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
             df_pending_new = df_pending.drop(bet_to_resolve).drop(columns=['display_name'])
             df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date']).dt.strftime('%Y-%m-%d')
