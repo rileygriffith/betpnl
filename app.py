@@ -204,20 +204,62 @@ with tab_bulk:
 # TAB 3: PENDING
 with tab_pending:
     if not df_pending.empty:
-        df_p_clean = df_pending.copy()
-        df_p_clean['display'] = df_p_clean['book'] + " ($" + df_p_clean['amount_risked'].astype(str) + ")"
-        selected_idx = st.selectbox("Resolve", options=df_p_clean.index, format_func=lambda x: df_p_clean.loc[x, 'display'])
-        res1, res2 = st.columns(2)
-        if res1.button("🏆 WIN SWEAT", width="stretch"):
-            sel = df_p_clean.loc[selected_idx]
-            st.session_state.staged_bets.append({
-                "event_date": sel['event_date'], "book": sel['book'], "timeframe_type": "daily",
-                "total_won": float(sel['potential_pnl']), "last_updated": datetime.now(local_tz).strftime('%Y-%m-%d %H:%M:%S')
-            })
-            conn.update(worksheet="pending", data=normalize_dataframe(df_p_clean.drop(selected_idx).drop(columns=['display']), "pending"))
-            st.cache_data.clear()
-            st.rerun()
-        st.dataframe(df_pending, use_container_width=True)
+        st.subheader("⏳ Resolve Active Sweats")
+        
+        # Add a resolution selector column to the existing pending data
+        # Users can select Win, Loss, or leave it blank to keep pending
+        df_pending_resolve = df_pending.copy()
+        df_pending_resolve.insert(0, "Resolution", ["---"] * len(df_pending))
+        
+        resolved_data = st.data_editor(
+            df_pending_resolve,
+            column_config={
+                "Resolution": st.column_config.SelectboxColumn(
+                    "Resolution",
+                    options=["---", "🏆 Win", "❌ Loss"],
+                    required=True,
+                )
+            },
+            disabled=["event_date", "book", "amount_risked", "odds", "potential_pnl", "status"],
+            hide_index=True,
+            use_container_width=True
+        )
+
+        if st.button("Confirm Resolutions", type="primary"):
+            # Filter for rows the user actually changed
+            wins = resolved_data[resolved_data["Resolution"] == "🏆 Win"]
+            losses = resolved_data[resolved_data["Resolution"] == "❌ Loss"]
+            
+            if not wins.empty or not losses.empty:
+                # 1. Move Wins to Staging Queue
+                for _, row in wins.iterrows():
+                    st.session_state.staged_bets.append({
+                        "event_date": row['event_date'],
+                        "book": row['book'],
+                        "timeframe_type": "single",
+                        "total_won": float(row['potential_pnl']),
+                        "last_updated": datetime.now(local_tz).strftime('%Y-%m-%d %H:%M:%S')
+                    })
+                
+                # 2. Move Losses to Staging Queue
+                for _, row in losses.iterrows():
+                    st.session_state.staged_bets.append({
+                        "event_date": row['event_date'],
+                        "book": row['book'],
+                        "timeframe_type": "single",
+                        "total_won": -float(row['amount_risked']),
+                        "last_updated": datetime.now(local_tz).strftime('%Y-%m-%d %H:%M:%S')
+                    })
+                
+                # 3. Update the 'Pending' sheet by removing resolved rows
+                indices_to_remove = resolved_data[resolved_data["Resolution"] != "---"].index
+                df_pending_remaining = df_pending.drop(indices_to_remove)
+                
+                with st.spinner("Updating Pending Sweats..."):
+                    conn.update(worksheet="pending", data=normalize_dataframe(df_pending_remaining, "pending"))
+                    st.cache_data.clear()
+                    st.success(f"Resolved {len(wins) + len(losses)} bets! Check the Staging Queue above to commit.")
+                    st.rerun()
     else:
         st.info("No active sweats.")
 
