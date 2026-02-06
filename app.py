@@ -5,7 +5,7 @@ import altair as alt
 from datetime import datetime
 
 # --- CONFIG ---
-st.set_page_config(page_title="Bet Tracker", layout="wide") # Changed to wide for charts
+st.set_page_config(page_title="Bet Tracker", layout="wide")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
 
@@ -21,7 +21,7 @@ def calc_pnl(risk, odds):
 df_ledger = conn.read(worksheet="transactions", ttl=0).dropna(how="all")
 df_pending = conn.read(worksheet="pending", ttl=0).dropna(how="all")
 
-# Convert dates to datetime objects for math
+# Ensure date column is datetime
 df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date'])
 
 # --- MONTHLY CALCULATIONS ---
@@ -29,39 +29,46 @@ now = datetime.now()
 df_month = df_ledger[(df_ledger['event_date'].dt.month == now.month) & 
                      (df_ledger['event_date'].dt.year == now.year)].copy()
 
+# 1. Group by date to get daily totals
+daily_totals = df_month.groupby('event_date')['total_won'].sum().reset_index()
+daily_totals = daily_totals.sort_values('event_date')
+
+# 2. CALCULATE CUMULATIVE PNL
+daily_totals['cumulative_pnl'] = daily_totals['total_won'].cumsum()
+
 monthly_pnl = df_month['total_won'].sum()
 pnl_color = "green" if monthly_pnl >= 0 else "red"
-
-# Prepare daily data for the line chart
-# Group by date and sum PnL for all books on that day
-daily_pnl = df_month.groupby('event_date')['total_won'].sum().reset_index()
-daily_pnl = daily_pnl.sort_values('event_date')
 
 # --- HEADER ---
 st.title("💰 Bet Management")
 c1, c2 = st.columns(2)
 c1.metric("All-Time PnL", f"${df_ledger['total_won'].sum():,.2f}")
-c2.metric(f"PnL for {now.strftime('%B')}", f"${monthly_pnl:,.2f}", 
-          delta=f"{monthly_pnl:,.2f}", delta_color="normal")
+c2.metric(f"{now.strftime('%B')} Cumulative PnL", f"${monthly_pnl:,.2f}", 
+          delta=f"{monthly_pnl:,.2f}")
 
-# --- VISUALS SECTION ---
 st.divider()
-if not daily_pnl.empty:
-    st.subheader(f"Performance: {now.strftime('%B %Y')}")
+
+# --- CUMULATIVE CHART ---
+if not daily_totals.empty:
+    st.subheader(f"MTD Profit Trajectory: {now.strftime('%B %Y')}")
     
-    # Altair Chart: Line with points
-    # Color logic: Red if monthly total is down, Green if up
-    chart = alt.Chart(daily_pnl).mark_line(
+    # Base Line Chart
+    line = alt.Chart(daily_totals).mark_line(
         point=True, 
         color=pnl_color,
-        strokeWidth=3
+        strokeWidth=3,
+        interpolate='monotone' # Makes the line slightly curved/smooth
     ).encode(
         x=alt.X('event_date:T', title='Date', axis=alt.Axis(format='%b %d')),
-        y=alt.Y('total_won:Q', title='Daily PnL ($)'),
-        tooltip=['event_date', 'total_won']
-    ).properties(height=300)
-    
-    st.altair_chart(chart, use_container_width=True)
+        y=alt.Y('cumulative_pnl:Q', title='Cumulative PnL ($)'),
+        tooltip=[alt.Tooltip('event_date:T', title='Date'), 
+                 alt.Tooltip('cumulative_pnl:Q', title='Running Total', format='$.2f')]
+    )
+
+    # Horizontal line at 0
+    rule = alt.Chart(pd.DataFrame({'y': [0]})).mark_rule(color='white', strokeDash=[5, 5]).encode(y='y')
+
+    st.altair_chart(line + rule, use_container_width=True)
 else:
     st.info("No data for the current month yet.")
 
@@ -117,7 +124,7 @@ with tab_bet:
                     conn.update(worksheet="pending", data=df_pending)
                     st.rerun()
 
-# --- TAB 2: BULK ENTRY (logic remains same, uses value=None) ---
+# --- TAB 2: BULK ENTRY ---
 with tab_bulk:
     with st.form("bulk_form", clear_on_submit=True):
         col1, col2 = st.columns(2)
@@ -144,7 +151,3 @@ with tab_pending:
             st.rerun()
     else:
         st.info("No active sweats.")
-
-# --- FOOTER ---
-with st.expander("📜 History"):
-    st.dataframe(df_ledger.sort_values("event_date", ascending=False), use_container_width=True)
