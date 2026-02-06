@@ -2,12 +2,17 @@ import streamlit as st
 from streamlit_gsheets import GSheetsConnection
 import pandas as pd
 import altair as alt
-from datetime import datetime
+from datetime import datetime, timedelta
 
 # --- CONFIG ---
 st.set_page_config(page_title="Bet Tracker", layout="wide")
 
 conn = st.connection("gsheets", type=GSheetsConnection)
+
+# --- SESSION STATE FOR STICKY DATE ---
+# Default to yesterday on first load
+if "sticky_date" not in st.session_state:
+    st.session_state.sticky_date = datetime.now().date() - timedelta(days=1)
 
 def calc_pnl(risk, odds):
     if risk is None or odds is None: return 0.0
@@ -25,11 +30,11 @@ except Exception:
     df_ledger = pd.DataFrame(columns=["event_date", "book", "timeframe_type", "total_won", "last_updated"])
     df_pending = pd.DataFrame(columns=["event_date", "book", "amount_risked", "odds", "potential_pnl", "status"])
 
-# --- CLEANING (FIX FOR VALUEERROR) ---
+# --- DATA CLEANING (PREVENTS VALUEERROR) ---
 df_ledger = df_ledger.dropna(subset=['event_date', 'book'], how='all')
 
 if not df_ledger.empty:
-    # 'mixed' format handles both YYYY-MM-DD and YYYY-MM-DD HH:MM:SS
+    # Use 'mixed' to handle various date/time string formats safely
     df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date'], errors='coerce', format='mixed')
     df_ledger = df_ledger.dropna(subset=['event_date'])
     df_ledger['total_won'] = pd.to_numeric(df_ledger['total_won'], errors='coerce').fillna(0.0)
@@ -37,7 +42,7 @@ if not df_ledger.empty:
 
 existing_books = sorted(df_ledger['book'].unique().tolist()) if not df_ledger.empty else []
 
-# --- MONTHLY CALCULATIONS ---
+# --- CALCULATIONS ---
 now = datetime.now()
 df_month = df_ledger[(df_ledger['event_date'].dt.month == now.month) & (df_ledger['event_date'].dt.year == now.year)].copy()
 daily_totals = df_month.groupby('event_date')['total_won'].sum().reset_index().sort_values('event_date')
@@ -49,7 +54,7 @@ pnl_color = "green" if monthly_pnl >= 0 else "red"
 st.title("💰 Bet Management")
 c1, c2 = st.columns(2)
 c1.metric("All-Time PnL", f"${df_ledger['total_won'].sum():,.2f}")
-c2.metric(f"{now.strftime('%B')} PnL", f"${monthly_pnl:,.2f}", delta=f"{monthly_pnl:,.2f}")
+c2.metric(f"{now.strftime('%B')} PnL", f"${monthly_pnl:,.2f}", delta=f"${monthly_pnl:,.2f}")
 
 st.divider()
 
@@ -67,12 +72,14 @@ st.divider()
 # --- TABS ---
 tab_bet, tab_bulk, tab_pending = st.tabs(["🎯 Single Bet", "📊 Bulk PnL", "⏳ Pending Sweats"])
 
-# TAB 1: SINGLE BET
+# TAB 1: SINGLE BET (With Sticky Date)
 with tab_bet:
     with st.container(border=True):
         col1, col2 = st.columns(2)
         with col1:
-            b_date = st.date_input("Date", datetime.now(), key="ent_date")
+            b_date = st.date_input("Date", value=st.session_state.sticky_date, key="date_picker_main")
+            st.session_state.sticky_date = b_date # Update sticky date on change
+            
             b_book = st.selectbox("Sportsbook", options=existing_books, key="b_book_select", index=None, accept_new_options=True)
         with col2:
             b_risk = st.number_input("Risked ($)", min_value=0.0, step=1.0, key="b_risk", value=None)
@@ -87,7 +94,7 @@ with tab_bet:
                 p = calc_pnl(b_risk, b_odds)
                 new_row = pd.DataFrame([{"event_date": date_str, "book": b_book, "timeframe_type": "daily", "total_won": p, "last_updated": update_time}])
                 df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
-                df_ledger['event_date'] = df_ledger['event_date'].dt.strftime('%Y-%m-%d')
+                df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date']).dt.strftime('%Y-%m-%d')
                 conn.update(worksheet="transactions", data=df_ledger)
                 st.rerun()
 
@@ -95,7 +102,7 @@ with tab_bet:
             if b_risk and b_book:
                 new_row = pd.DataFrame([{"event_date": date_str, "book": b_book, "timeframe_type": "daily", "total_won": -b_risk, "last_updated": update_time}])
                 df_ledger = pd.concat([df_ledger, new_row], ignore_index=True)
-                df_ledger['event_date'] = df_ledger['event_date'].dt.strftime('%Y-%m-%d')
+                df_ledger['event_date'] = pd.to_datetime(df_ledger['event_date']).dt.strftime('%Y-%m-%d')
                 conn.update(worksheet="transactions", data=df_ledger)
                 st.rerun()
 
@@ -113,7 +120,7 @@ with tab_bulk:
         st.subheader("Manual PnL Entry")
         col1, col2 = st.columns(2)
         with col1:
-            p_date = st.date_input("Date", datetime.now(), key="p_date")
+            p_date = st.date_input("Date", value=st.session_state.sticky_date, key="bulk_date_picker")
             p_timeframe = st.selectbox("Type", ["daily", "monthly", "yearly", "other"], key="p_type")
         with col2:
             p_book = st.selectbox("Source", options=existing_books, key="p_book_select", index=None, accept_new_options=True)
@@ -121,6 +128,7 @@ with tab_bulk:
         
         if st.form_submit_button("Log Bulk PnL", width="stretch"):
             if p_pnl is not None and p_book:
+                st.session_state.sticky_date = p_date
                 new_row = pd.DataFrame([{
                     "event_date": p_date.strftime('%Y-%m-%d'), 
                     "book": p_book, 
@@ -137,7 +145,6 @@ with tab_bulk:
 with tab_pending:
     if not df_pending.empty:
         st.subheader("Resolve a Sweat")
-        # Ensure date is string for display purposes
         df_pending['display_name'] = df_pending['book'] + " ($" + df_pending['amount_risked'].astype(str) + " on " + df_pending['event_date'].astype(str) + ")"
         bet_to_resolve = st.selectbox("Select Bet", options=df_pending.index, format_func=lambda x: df_pending.loc[x, 'display_name'])
         
@@ -174,12 +181,10 @@ with st.expander("⚙️ Bulk Edit Ledger"):
         df_edit = df_ledger.copy()
         df_edit['event_date'] = df_edit['event_date'].dt.strftime('%Y-%m-%d')
         df_edit = df_edit.sort_values('last_updated', ascending=False)
-        # Convert last_updated to string to prevent editor from breaking it
         df_edit['last_updated'] = df_edit['last_updated'].dt.strftime('%Y-%m-%d %H:%M:%S')
         
         edited_df = st.data_editor(df_edit, width="stretch", num_rows="dynamic")
         if st.button("💾 Save Bulk Changes", width="stretch"):
-            # Final sanitize before saving
             edited_df['event_date'] = pd.to_datetime(edited_df['event_date'], errors='coerce').dt.strftime('%Y-%m-%d')
             conn.update(worksheet="transactions", data=edited_df)
             st.rerun()
