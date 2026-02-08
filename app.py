@@ -75,13 +75,12 @@ if not df_ledger.empty:
 else:
     daily_totals, monthly_pnl, all_time_pnl = pd.DataFrame(), 0.0, 0.0
 
-# --- UI DISPLAY: CORRECTED KPI PILLS ---
+# --- UI DISPLAY: KPI PILLS ---
 st.title("💰 Bet Management")
 
 def kpi_pill(label, amount):
-    # Bold solid colors: Emerald Green and Crimson Red
     bg_color = "#2e7d32" if amount >= 0 else "#d32f2f" 
-    text_color = "#ffffff" # Pure white text for high contrast
+    text_color = "#ffffff"
     prefix = "+" if amount >= 0 else ""
     
     st.markdown(f"""
@@ -139,16 +138,37 @@ if st.session_state.staged_bets:
             st.rerun()
 
 st.divider()
-tab_bet, tab_bulk, tab_pending = st.tabs(["🎯 Single Bet", "📊 Bulk PnL", "⏳ Pending Sweats"])
+# SWAPPED TAB ORDER: Bulk PnL now first, Single Bet second
+tab_bulk, tab_bet, tab_pending = st.tabs(["📊 Bulk PnL", "🎯 Single Bet", "⏳ Pending Sweats"])
 
-# (Rest of TAB logic remains the same...)
-# TAB 1: SINGLE BET
+# TAB 1: BULK PNL (Updated to first position)
+with tab_bulk:
+    with st.form("bulk_pnl_form", border=True):
+        ca, cb = st.columns(2)
+        with ca:
+            b_date = st.date_input("Date", value=st.session_state.sticky_date, key="bulk_date")
+            b_type = st.selectbox("Type", ["daily", "bulk", "monthly"])
+        with cb:
+            b_book = st.selectbox("Sportsbook", options=existing_books, index=None, placeholder="Select Book...", key="bulk_book")
+            b_pnl = st.number_input("Net PnL ($)", step=0.01, format="%.2f")
+        
+        if st.form_submit_button("Add to Queue", use_container_width=True):
+            if b_book and b_pnl != 0:
+                st.session_state.staged_bets.append({
+                    "event_date": b_date.strftime('%Y-%m-%d'),
+                    "book": b_book, "timeframe_type": b_type,
+                    "total_won": float(b_pnl),
+                    "last_updated": datetime.now(local_tz).strftime('%Y-%m-%d %H:%M:%S')
+                })
+                st.rerun()
+
+# TAB 2: SINGLE BET (Updated to second position)
 with tab_bet:
     with st.form("single_bet_form", border=True):
         col1, col2 = st.columns(2)
         with col1:
-            sb_date = st.date_input("Date", value=st.session_state.sticky_date)
-            sb_book = st.selectbox("Sportsbook", options=existing_books, index=None, placeholder="Select Book...")
+            sb_date = st.date_input("Date", value=st.session_state.sticky_date, key="single_date")
+            sb_book = st.selectbox("Sportsbook", options=existing_books, index=None, placeholder="Select Book...", key="single_book")
         with col2:
             sb_risk = st.number_input("Risked ($)", min_value=0.0, step=1.0)
             sb_odds = st.number_input("American Odds", step=1, value=100)
@@ -180,34 +200,11 @@ with tab_bet:
                     })
                     st.rerun()
 
-# TAB 2: BULK PNL
-with tab_bulk:
-    with st.form("bulk_pnl_form", border=True):
-        ca, cb = st.columns(2)
-        with ca:
-            b_date = st.date_input("Date", value=st.session_state.sticky_date)
-            b_type = st.selectbox("Type", ["daily", "bulk", "monthly"])
-        with cb:
-            b_book = st.selectbox("Sportsbook", options=existing_books, index=None, placeholder="Select Book...")
-            b_pnl = st.number_input("Net PnL ($)", step=0.01, format="%.2f")
-        
-        if st.form_submit_button("Add to Queue", use_container_width=True):
-            if b_book and b_pnl != 0:
-                st.session_state.staged_bets.append({
-                    "event_date": b_date.strftime('%Y-%m-%d'),
-                    "book": b_book, "timeframe_type": b_type,
-                    "total_won": float(b_pnl),
-                    "last_updated": datetime.now(local_tz).strftime('%Y-%m-%d %H:%M:%S')
-                })
-                st.rerun()
-
 # TAB 3: PENDING
 with tab_pending:
     if not df_pending.empty:
         st.subheader("⏳ Resolve Active Sweats")
         
-        # Add a resolution selector column to the existing pending data
-        # Users can select Win, Loss, or leave it blank to keep pending
         df_pending_resolve = df_pending.copy()
         df_pending_resolve.insert(0, "Resolution", ["---"] * len(df_pending))
         
@@ -226,12 +223,10 @@ with tab_pending:
         )
 
         if st.button("Confirm Resolutions", type="primary"):
-            # Filter for rows the user actually changed
             wins = resolved_data[resolved_data["Resolution"] == "🏆 Win"]
             losses = resolved_data[resolved_data["Resolution"] == "❌ Loss"]
             
             if not wins.empty or not losses.empty:
-                # 1. Move Wins to Staging Queue
                 for _, row in wins.iterrows():
                     st.session_state.staged_bets.append({
                         "event_date": row['event_date'],
@@ -241,7 +236,6 @@ with tab_pending:
                         "last_updated": datetime.now(local_tz).strftime('%Y-%m-%d %H:%M:%S')
                     })
                 
-                # 2. Move Losses to Staging Queue
                 for _, row in losses.iterrows():
                     st.session_state.staged_bets.append({
                         "event_date": row['event_date'],
@@ -251,7 +245,6 @@ with tab_pending:
                         "last_updated": datetime.now(local_tz).strftime('%Y-%m-%d %H:%M:%S')
                     })
                 
-                # 3. Update the 'Pending' sheet by removing resolved rows
                 indices_to_remove = resolved_data[resolved_data["Resolution"] != "---"].index
                 df_pending_remaining = df_pending.drop(indices_to_remove)
                 
