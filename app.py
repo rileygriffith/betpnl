@@ -116,17 +116,17 @@ if not daily_totals.empty:
         y=alt.Y('cumulative_pnl:Q', title='Cumulative PnL ($)'),
         tooltip=['event_date', 'cumulative_pnl']
     ).properties(height=250)
-    st.altair_chart(line, use_container_width=True)
+    st.altair_chart(line, width="stretch")
 
 # --- STAGING AREA ---
 if st.session_state.staged_bets:
     with st.container(border=True):
         st.subheader("📋 Staging Queue")
         df_stage = pd.DataFrame(st.session_state.staged_bets)
-        st.dataframe(df_stage, use_container_width=True, hide_index=True)
+        st.dataframe(df_stage, width="stretch", hide_index=True)
         
         q_c1, q_c2 = st.columns([1, 5])
-        if q_c1.button("🚀 Commit to Ledger", type="primary", use_container_width=True):
+        if q_c1.button("🚀 Commit to Ledger", type="primary", width="stretch"):
             with st.spinner("Batch writing..."):
                 final_df = pd.concat([df_ledger, df_stage], ignore_index=True)
                 conn.update(worksheet="transactions", data=normalize_dataframe(final_df))
@@ -138,10 +138,9 @@ if st.session_state.staged_bets:
             st.rerun()
 
 st.divider()
-# SWAPPED TAB ORDER: Bulk PnL now first, Single Bet second
 tab_bulk, tab_bet, tab_pending = st.tabs(["📊 Bulk PnL", "🎯 Single Bet", "⏳ Pending Sweats"])
 
-# TAB 1: BULK PNL (Updated to first position)
+# TAB 1: BULK PNL
 with tab_bulk:
     with st.form("bulk_pnl_form", border=True):
         ca, cb = st.columns(2)
@@ -152,7 +151,7 @@ with tab_bulk:
             b_book = st.selectbox("Sportsbook", options=existing_books, index=None, placeholder="Select Book...", key="bulk_book")
             b_pnl = st.number_input("Net PnL ($)", step=0.01, format="%.2f")
         
-        if st.form_submit_button("Add to Queue", use_container_width=True):
+        if st.form_submit_button("Add to Queue", width="stretch"):
             if b_book and b_pnl != 0:
                 st.session_state.staged_bets.append({
                     "event_date": b_date.strftime('%Y-%m-%d'),
@@ -162,7 +161,7 @@ with tab_bulk:
                 })
                 st.rerun()
 
-# TAB 2: SINGLE BET (Updated to second position)
+# TAB 2: SINGLE BET
 with tab_bet:
     with st.form("single_bet_form", border=True):
         col1, col2 = st.columns(2)
@@ -174,9 +173,9 @@ with tab_bet:
             sb_odds = st.number_input("American Odds", step=1, value=100)
         
         sb_c1, sb_c2, sb_c3 = st.columns(3)
-        win_submit = sb_c1.form_submit_button("✅ Win (Stage)", use_container_width=True)
-        loss_submit = sb_c2.form_submit_button("❌ Loss (Stage)", use_container_width=True)
-        pend_submit = sb_c3.form_submit_button("⏳ Pending (Direct)", use_container_width=True)
+        win_submit = sb_c1.form_submit_button("✅ Win (Stage)", width="stretch")
+        loss_submit = sb_c2.form_submit_button("❌ Loss (Stage)", width="stretch")
+        pend_submit = sb_c3.form_submit_button("⏳ Pending (Direct)", width="stretch")
 
         if win_submit or loss_submit or pend_submit:
             if sb_book and sb_risk > 0:
@@ -219,7 +218,7 @@ with tab_pending:
             },
             disabled=["event_date", "book", "amount_risked", "odds", "potential_pnl", "status"],
             hide_index=True,
-            use_container_width=True
+            width="stretch"
         )
 
         if st.button("Confirm Resolutions", type="primary"):
@@ -259,4 +258,4 @@ with tab_pending:
 st.divider()
 st.subheader("Live Ledger (Top 10)")
 if not df_ledger.empty:
-    st.dataframe(df_ledger.sort_values('last_updated', ascending=False).head(10), use_container_width=True, hide_index=True)
+    st.dataframe(df_ledger.sort_values('last_updated', ascending=False).head(10), width="stretch", hide_index=True)
