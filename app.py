@@ -212,7 +212,8 @@ with tab_pending:
             column_config={
                 "Resolution": st.column_config.SelectboxColumn(
                     "Resolution",
-                    options=["---", "🏆 Win", "❌ Loss"],
+                    # Added "🔄 Void" to the options
+                    options=["---", "🏆 Win", "❌ Loss", "🔄 Void"],
                     required=True,
                 )
             },
@@ -224,8 +225,10 @@ with tab_pending:
         if st.button("Confirm Resolutions", type="primary"):
             wins = resolved_data[resolved_data["Resolution"] == "🏆 Win"]
             losses = resolved_data[resolved_data["Resolution"] == "❌ Loss"]
+            voids = resolved_data[resolved_data["Resolution"] == "🔄 Void"]
             
-            if not wins.empty or not losses.empty:
+            if not wins.empty or not losses.empty or not voids.empty:
+                # Handle Wins
                 for _, row in wins.iterrows():
                     st.session_state.staged_bets.append({
                         "event_date": row['event_date'],
@@ -235,6 +238,7 @@ with tab_pending:
                         "last_updated": datetime.now(local_tz).strftime('%Y-%m-%d %H:%M:%S')
                     })
                 
+                # Handle Losses
                 for _, row in losses.iterrows():
                     st.session_state.staged_bets.append({
                         "event_date": row['event_date'],
@@ -244,17 +248,24 @@ with tab_pending:
                         "last_updated": datetime.now(local_tz).strftime('%Y-%m-%d %H:%M:%S')
                     })
                 
+                # Note: Void rows are implicitly handled by being included in 'indices_to_remove' 
+                # but NOT added to st.session_state.staged_bets.
+
                 indices_to_remove = resolved_data[resolved_data["Resolution"] != "---"].index
                 df_pending_remaining = df_pending.drop(indices_to_remove)
                 
                 with st.spinner("Updating Pending Sweats..."):
                     conn.update(worksheet="pending", data=normalize_dataframe(df_pending_remaining, "pending"))
                     st.cache_data.clear()
-                    st.success(f"Resolved {len(wins) + len(losses)} bets! Check the Staging Queue above to commit.")
+                    
+                    msg = f"Resolved {len(wins) + len(losses) + len(voids)} bets!"
+                    if not voids.empty:
+                        msg += f" ({len(voids)} voided)"
+                        
+                    st.success(msg)
                     st.rerun()
     else:
         st.info("No active sweats.")
-
 st.divider()
 st.subheader("Live Ledger (Top 10)")
 if not df_ledger.empty:
