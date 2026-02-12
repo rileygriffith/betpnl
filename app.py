@@ -267,6 +267,6 @@ with tab_pending:
     else:
         st.info("No active sweats.")
 st.divider()
-st.subheader("Live Ledger (Top 10)")
+st.subheader("Live Ledger")
 if not df_ledger.empty:
-    st.dataframe(df_ledger.sort_values('last_updated', ascending=False).head(10), width="stretch", hide_index=True)
+    st.dataframe(df_ledger.sort_values('last_updated', ascending=False).head(25), width="stretch", hide_index=True)
